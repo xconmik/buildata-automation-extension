@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Buildata Automation</title>
+  <style>
+    body { 
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      width: 350px;
+      padding: 16px;
+      margin: 0;
+    }
+    h2 {
+      margin: 0 0 16px 0;
+      color: #2c3e50;
+      font-size: 18px;
+    }
+    .upload-section {
+      border: 2px dashed #3498db;
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+      margin-bottom: 16px;
+      background: #ecf0f1;
+    }
+    input[type="file"] {
+      display: none;
+    }
+    .upload-label {
+      display: inline-block;
+      padding: 10px 20px;
+      background: #3498db;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .upload-label:hover {
+      background: #2980b9;
+    }
+    .file-info {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #7f8c8d;
+    }
+    .controls {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    button {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    #startBtn {
+      background: #27ae60;
+      color: white;
+    }
+    #startBtn:hover:not(:disabled) {
+      background: #229954;
+    }
+    #stopBtn {
+      background: #e74c3c;
+      color: white;
+    }
+    #stopBtn:hover:not(:disabled) {
+      background: #c0392b;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .status {
+      padding: 12px;
+      border-radius: 4px;
+      margin-bottom: 12px;
+      font-size: 13px;
+      display: none;
+    }
+    .status.info {
+      background: #d5e8f7;
+      color: #2874a6;
+      display: block;
+    }
+    .status.success {
+      background: #d5f4e6;
+      color: #196f3d;
+      display: block;
+    }
+    .status.error {
+      background: #fadbd8;
+      color: #943126;
+      display: block;
+    }
+    .progress {
+      margin-top: 12px;
+      font-size: 13px;
+      color: #34495e;
+    }
+    .campaign-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .campaign-input-wrapper {
+      flex: 1;
+    }
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 50px;
+      height: 26px;
+    }
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+      border-radius: 26px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+    input:checked + .slider {
+      background-color: #2ecc71;
+    }
+    input:checked + .slider:before {
+      transform: translateX(24px);
+    }
+    .toggle-label {
+      font-size: 12px;
+      color: #7f8c8d;
+      text-align: center;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h2>🤖 Buildata Automation</h2>
+  
+  <div class="campaign-row">
+    <div class="campaign-input-wrapper">
+      <label for="campaignInput" style="display: block; margin-bottom: 6px; font-size: 13px; color: #34495e; font-weight: 600;">Campaign Name:</label>
+      <input type="text" id="campaignInput" placeholder="Type campaign name..." style="width: 100%; padding: 8px 12px; border: 2px solid #3498db; border-radius: 6px; font-size: 14px; box-sizing: border-box; font-family: inherit;" disabled>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; padding-top: 20px;">
+      <label class="toggle-switch">
+        <input type="checkbox" id="campaignToggle">
+        <span class="slider"></span>
+      </label>
+      <div class="toggle-label" id="toggleLabel">OFF</div>
+    </div>
+  </div>
+  
+  <div class="upload-section">
+    <label for="csvFile" class="upload-label">📁 Upload CSV</label>
+    <input type="file" id="csvFile" accept=".csv" />
+    <div class="file-info" id="fileInfo">No file selected</div>
+  </div>
+
+  <div class="status" id="status"></div>
+
+  <div class="controls">
+    <button id="startBtn" disabled>▶ Start</button>
+    <button id="stopBtn" disabled>⏹ Stop</button>
+  </div>
+
+  <div class="progress" id="progress"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

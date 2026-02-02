@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Buildata Automation Extension",
+  "version": "1.0.0",
+  "description": "Automate Buildata workflows and data extraction.",
+  "permissions": [
+    "scripting",
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://buildata.pharosiq.com/*",
+    "https://www.google.com/*",
+    "https://www.zoominfo.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://buildata.pharosiq.com/*"
+      ],
+      "js": ["content.js"]
+    },
+    {
+      "matches": [
+        "https://www.google.com/*",
+        "https://www.zoominfo.com/*",
+        "https://rocketreach.co/*"
+      ],
+      "js": ["scraper.js"]
+    }
+  ]
+}
