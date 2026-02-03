@@ -482,9 +482,24 @@ async function selectCampaign(campaignName) {
       searchInput.value = campaignName;
       console.log(`   Current value after set: "${searchInput.value}"`);
       
-      // Fire single input event
+      // Fire keyboard events that actually trigger filtering
+      console.log('   Firing keyboard events to trigger filter...');
+      for (let i = 0; i < campaignName.length; i++) {
+        searchInput.dispatchEvent(new KeyboardEvent('keydown', { 
+          key: campaignName[i], 
+          code: `Key${campaignName[i].toUpperCase()}`,
+          bubbles: true 
+        }));
+        searchInput.dispatchEvent(new KeyboardEvent('keyup', { 
+          key: campaignName[i], 
+          code: `Key${campaignName[i].toUpperCase()}`,
+          bubbles: true 
+        }));
+      }
+      
+      // Also fire input event
       searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-      console.log('   ✓ Dispatched input event');
+      console.log('   ✓ Dispatched keyboard and input events');
       
       console.log('   Waiting for dropdown to filter to show matching campaigns...');
       // Wait until dropdown filters to show only matching items
@@ -497,21 +512,34 @@ async function selectCampaign(campaignName) {
         waitAttempts++;
         
         const tempItems = Array.from(document.querySelectorAll('div.dropdown-item'));
-        const matchingItems = tempItems.filter(item => 
-          item.textContent.toLowerCase().includes(campaignName.toLowerCase())
-        );
+        const matchingItems = tempItems.filter(item => {
+          const itemText = item.textContent.toLowerCase();
+          const searchText = campaignName.toLowerCase();
+          return itemText.includes(searchText);
+        });
         
         if (matchingItems.length > 0) {
           console.log(`   ✓ Found ${matchingItems.length} matching item(s) for "${campaignName}" (attempt ${waitAttempts})`);
+          matchingItems.forEach((item, idx) => {
+            console.log(`     Match ${idx}: "${item.textContent.trim().substring(0, 50)}..."`);
+          });
           console.log(`   Total items in dropdown: ${tempItems.length}`);
           foundMatchingItems = true;
+        } else if (tempItems.length < 20) {
+          // If items are fewer than before, dropdown is filtering
+          console.log(`   ✓ Dropdown filtered to ${tempItems.length} items (attempt ${waitAttempts})`);
+          tempItems.forEach((item, idx) => {
+            console.log(`     Item ${idx}: "${item.textContent.trim().substring(0, 50)}..."`);
+          });
+          foundMatchingItems = true;
         } else {
-          console.log(`   ⏳ Waiting... ${tempItems.length} total items, 0 matching (attempt ${waitAttempts}/${maxAttempts})`);
+          console.log(`   ⏳ Waiting... ${tempItems.length} total items, ${matchingItems.length} matching (attempt ${waitAttempts}/${maxAttempts})`);
         }
       }
       
       if (!foundMatchingItems) {
         console.warn(`   ⚠️ Timeout waiting for filtered items after ${maxAttempts} attempts`);
+        console.log('   Note: Campaign ID "' + campaignName + '" may not exist in dropdown, or dropdown filtering is not responding');
       }
     } else {
       console.warn('   ⚠️ Search input not found. Trying to select from dropdown list directly.');
