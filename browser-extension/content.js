@@ -120,19 +120,30 @@ async function fillBuildataForm(data) {
   
   // === PREBUILD SECTION ===
   // Handle Campaign dropdown - wait for completion before continuing
+  let campaignSelected = false;
   if (data.campaignName && data.campaignName.trim()) {
     console.log('🎯 Starting campaign selection for:', data.campaignName);
     try {
       await selectCampaign(data.campaignName);
       console.log('✓✓✓ Campaign selection completed successfully');
+      campaignSelected = true;
     } catch (error) {
       console.error('❌❌❌ Campaign selection FAILED:', error);
       console.error('Error details:', error.stack);
+      console.error('⛔ STOPPING - Cannot proceed without campaign selection');
+      throw new Error('Campaign selection required but failed: ' + error.message);
     }
     // Extra wait after campaign selection to ensure form is ready
-    await sleep(1500);
+    await sleep(2000);
   } else {
     console.log('⚠️ No campaign name provided or campaign toggle is OFF - skipping campaign selection');
+    campaignSelected = true; // Allow to proceed if campaign not required
+  }
+  
+  // Only continue if campaign selection succeeded (or wasn't required)
+  if (!campaignSelected) {
+    console.error('⛔ Stopping form fill - campaign selection required but not completed');
+    return;
   }
   
   // Fill email and click Check Email button
@@ -425,7 +436,7 @@ async function selectCampaign(campaignName) {
     
     console.log('✓ Clicking campaign button...');
     campaignBtn.click();
-    await sleep(1500);
+    await sleep(2500); // Increased from 1500ms
     
     // Find and focus search input with multiple fallback selectors
     let searchInput = document.querySelector('input.form-control[placeholder="Search..."]') ||
@@ -439,9 +450,9 @@ async function selectCampaign(campaignName) {
     if (searchInput) {
       console.log('✓ Found search input, typing campaign...');
       searchInput.focus();
-      await sleep(500);
+      await sleep(800); // Increased from 500ms
       searchInput.value = '';
-      await sleep(200);
+      await sleep(400); // Increased from 200ms
       
       // Type campaign name
       for (let char of campaignName) {
@@ -449,13 +460,14 @@ async function selectCampaign(campaignName) {
         searchInput.dispatchEvent(new Event('input', { bubbles: true }));
         searchInput.dispatchEvent(new Event('keyup', { bubbles: true }));
         searchInput.dispatchEvent(new Event('change', { bubbles: true }));
-        await sleep(80);
+        await sleep(150); // Increased from 80ms
       }
       
       console.log('✓ Finished typing, waiting for dropdown...');
-      await sleep(1500);
+      await sleep(2500); // Increased from 1500ms
     } else {
       console.warn('⚠️ Search input not found. Trying to select from dropdown list directly.');
+      await sleep(1000);
     }
     
     // Click dropdown item (match campaign name if possible)
@@ -466,16 +478,18 @@ async function selectCampaign(campaignName) {
     const matchItem = dropdownItems.find(item => item.textContent.toLowerCase().includes(campaignName.toLowerCase())) || dropdownItems[0];
     const itemText = matchItem.textContent.trim();
     console.log(`✓ Clicking item: "${itemText.substring(0, 50)}..."`);
-    await sleep(200);
+    await sleep(500); // Increased from 200ms
     matchItem.click();
-    await sleep(1200);
+    await sleep(2000); // Increased from 1200ms
     
     // Click Load Specifications
     const loadSpecBtn = Array.from(document.querySelectorAll('button')).find(btn => btn.textContent.includes('Load Specifications'));
     if (loadSpecBtn) {
       console.log('✓ Clicking Load Specifications...');
       loadSpecBtn.click();
-      await sleep(3000);
+      await sleep(4000); // Increased from 3000ms
+    } else {
+      console.warn('⚠️ Load Specifications button not found');
     }
     
     console.log(`========== CAMPAIGN SELECTION COMPLETE ==========\n`);
