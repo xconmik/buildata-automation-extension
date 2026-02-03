@@ -216,26 +216,60 @@ async function scrapeZoomInfoEmployeeDirectory() {
     console.log('Current URL:', window.location.href);
     console.log('========================================');
     
-    // Extract address and employee info from subtitle text
-    // Look for: "Company corporate office is located in [Address], [City], [State], [ZIP], [Country] and has [X]+ employees."
-    const subtitleEl = document.querySelector('p.subTitle');
-    if (subtitleEl) {
-      const text = subtitleEl.textContent.trim();
-      console.log('Found subtitle text:', text);
-      
-      // Parse: "Beiersdorf corporate office is located in Beiersdorfstrasse Hamburg 1-9, Hamburg, Hamburg, 20245, Germany and has 10K+ employees."
-      // Format: [Street], [City], [State], [ZIP], [Country] and has [Employees]
-      
+    // Search all text content for address and employee patterns
+    const bodyText = document.body.textContent;
+    console.log('Body text length:', bodyText.length);
+    
+    // Try multiple selectors to find the subtitle or similar element
+    let titleText = '';
+    
+    // Try different selectors
+    const selectors = [
+      'p.subTitle',
+      '[class*="subtitle"]',
+      '[class*="address"]',
+      'p[class*="info"]',
+      '.company-info p',
+      '[data-qa*="subtitle"]'
+    ];
+    
+    for (const selector of selectors) {
+      const el = document.querySelector(selector);
+      if (el && el.textContent.includes('located')) {
+        titleText = el.textContent.trim();
+        console.log('✓ Found address text via selector:', selector);
+        console.log('Text:', titleText);
+        break;
+      }
+    }
+    
+    // If no element found, search in body text
+    if (!titleText) {
+      console.log('Searching in body text for "located"...');
+      const match = bodyText.match(/[^.]*located in[^.]*\./);
+      if (match) {
+        titleText = match[0];
+        console.log('✓ Found address in body text:', titleText);
+      }
+    }
+    
+    if (titleText) {
       // Extract employees (e.g., "10K+", "5000+", "500")
-      const empMatch = text.match(/has\s+([0-9KMB.]+\+?)\s+employees/i);
+      const empMatch = titleText.match(/has\s+([0-9KMB.]+\+?)\s+employees/i);
       if (empMatch) {
         data.employees = empMatch[1];
         console.log('✓ Found employees:', data.employees);
       }
       
-      // Extract address components
-      // Pattern: "located in [address part]," -> find up to first comma after "located in"
-      const locatedMatch = text.match(/located in\s+([^,]+),\s*([^,]+),\s*([^,]+),\s*(\d{4,5}),/);
+      // Extract address components - try multiple patterns
+      // Pattern 1: "located in [Street], [City], [State], [ZIP],"
+      let locatedMatch = titleText.match(/located in\s+([^,]+),\s*([^,]+),\s*([^,]+),\s*(\d{4,5}),/);
+      
+      // Pattern 2: If that doesn't work, try with just numbers after spaces
+      if (!locatedMatch) {
+        locatedMatch = titleText.match(/located in\s+([^,]+),\s*([^,]+),\s*([^,]+),\s*(\d+)/);
+      }
+      
       if (locatedMatch) {
         data.streetAddress = locatedMatch[1].trim();
         data.city = locatedMatch[2].trim();
@@ -247,9 +281,12 @@ async function scrapeZoomInfoEmployeeDirectory() {
           state: data.state,
           zip: data.zipCode
         });
+      } else {
+        console.log('✗ Could not parse address with patterns');
+        console.log('Text was:', titleText);
       }
     } else {
-      console.log('✗ Subtitle element not found');
+      console.log('✗ Could not find address text in page');
     }
     
   } catch (error) {
