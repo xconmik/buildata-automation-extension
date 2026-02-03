@@ -1,11 +1,13 @@
 let leads = [];
 let currentIndex = 0;
 let isRunning = false;
+let logRows = [];
 
 const csvFileInput = document.getElementById('csvFile');
 const fileInfo = document.getElementById('fileInfo');
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
+const downloadLogBtn = document.getElementById('downloadLogBtn');
 const status = document.getElementById('status');
 const progress = document.getElementById('progress');
 const campaignInput = document.getElementById('campaignInput');
@@ -56,6 +58,7 @@ autoButtonsToggle.addEventListener('change', () => {
 csvFileInput.addEventListener('change', handleFileUpload);
 startBtn.addEventListener('click', startAutomation);
 stopBtn.addEventListener('click', stopAutomation);
+downloadLogBtn.addEventListener('click', downloadLogCsv);
 
 // Check if we're on the right page
 chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
@@ -77,6 +80,8 @@ function handleFileUpload(e) {
   reader.onload = (event) => {
     const csv = event.target.result;
     leads = parseCSV(csv);
+    logRows = [];
+    downloadLogBtn.disabled = true;
     showStatus(`Loaded ${leads.length} leads`, 'success');
     startBtn.disabled = false;
     currentIndex = 0;
@@ -152,6 +157,7 @@ function startAutomation() {
   isRunning = true;
   startBtn.disabled = true;
   stopBtn.disabled = false;
+  downloadLogBtn.disabled = logRows.length === 0;
   showStatus('Automation started...', 'info');
   
   processNextLead();
@@ -161,6 +167,7 @@ function stopAutomation() {
   isRunning = false;
   startBtn.disabled = false;
   stopBtn.disabled = true;
+  downloadLogBtn.disabled = logRows.length === 0;
   showStatus('Automation stopped', 'info');
 }
 
@@ -217,10 +224,13 @@ async function processNextLead() {
   }, (response) => {
     if (chrome.runtime.lastError || !response || response.status === 'error') {
       console.error('Fill error:', chrome.runtime.lastError || response);
+      logLeadResult(lead, 'ERROR', (response && response.message) || (chrome.runtime.lastError && chrome.runtime.lastError.message) || 'Unknown error');
       showStatus('Error filling form. Check console for details.', 'error');
       stopAutomation();
       return;
     }
+
+    logLeadResult(lead, 'SUCCESS', '');
     
     currentIndex++;
     if (currentIndex < leads.length) {
@@ -268,4 +278,52 @@ function updateProgress() {
 function showStatus(message, type) {
   status.textContent = message;
   status.className = `status ${type}`;
+}
+
+function logLeadResult(lead, statusValue, message) {
+  const domain = lead['Domain or Website'] || lead.domain || '';
+  const company = lead.Company || lead.company || '';
+  const name = lead['First Name, Last Name'] || lead.firstNameLastName || '';
+  const timestamp = new Date().toISOString();
+
+  logRows.push({
+    timestamp,
+    status: statusValue,
+    company,
+    domain,
+    name,
+    message
+  });
+
+  downloadLogBtn.disabled = logRows.length === 0;
+}
+
+function downloadLogCsv() {
+  if (logRows.length === 0) return;
+
+  const headers = ['Timestamp', 'Status', 'Company', 'Domain', 'Name', 'Message'];
+  const lines = [headers.join(',')];
+
+  logRows.forEach(row => {
+    const values = [
+      row.timestamp,
+      row.status,
+      row.company,
+      row.domain,
+      row.name,
+      row.message
+    ].map(v => `"${String(v).replace(/"/g, '""')}"`);
+    lines.push(values.join(','));
+  });
+
+  const csvContent = lines.join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `buildata_log_${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
