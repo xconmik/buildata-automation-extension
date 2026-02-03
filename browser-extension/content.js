@@ -78,168 +78,6 @@ async function fillBuildataForm(data) {
   const scrapedRevenue = data.scrapedRevenue || '';
   const scrapedEmail = data.scrapedEmail || '';
   
-  // Parse headquarters string into address components dynamically
-  // Handles formats like:
-  // - "Street Address, City, State, ZipCode, Country"
-  // - "Street Address, City, State, ZipCode"
-  // - "Street Address, City, State"
-  let scrapedStreetAddress = '';
-  let scrapedCity = '';
-  let scrapedState = '';
-  let scrapedZipCode = '';
-  
-  if (scrapedHeadquarters) {
-    console.log('Parsing headquarters dynamically:', scrapedHeadquarters);
-    
-    // Remove trailing "..." if present (truncation indicator from ZoomInfo)
-    let hqClean = scrapedHeadquarters.replace(/\.\.\.$/, '').trim();
-    console.log('Cleaned headquarters:', hqClean);
-    
-    const parts = hqClean.split(',').map(p => p.trim()).filter(p => p.length > 0);
-    
-    console.log('Parts found:', parts, 'Count:', parts.length);
-    
-    // Detect country from the last part (if present)
-    const lastPart = parts[parts.length - 1]?.toUpperCase() || '';
-    const countryDetected = lastPart.length > 2 && lastPart.match(/^[A-Z\s]+$/) ? lastPart : null;
-    
-    // Dynamic zip pattern based on country
-    let zipPatterns = [
-      /^\d{4,5}$/,  // Default: 4-5 digits (Germany, Austria, Switzerland)
-    ];
-    
-    if (countryDetected) {
-      console.log('Country detected:', countryDetected);
-      
-      // Country-specific zip patterns
-      const zipPatternMap = {
-        'US': /^\d{5}(?:-\d{4})?$/,           // US: 12345 or 12345-6789
-        'USA': /^\d{5}(?:-\d{4})?$/,
-        'UK': /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i,  // UK: SW1A 1AA
-        'UNITED KINGDOM': /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i,
-        'CA': /^[A-Z]\d[A-Z]\s\d[A-Z]\d$/i,  // Canada: K1A 0B1
-        'CANADA': /^[A-Z]\d[A-Z]\s\d[A-Z]\d$/i,
-        'AU': /^\d{4}$/,                       // Australia: 4-digit
-        'AUSTRALIA': /^\d{4}$/,
-        'JP': /^\d{3}-\d{4}$/,                // Japan: 123-4567
-        'JAPAN': /^\d{3}-\d{4}$/,
-        'DE': /^\d{5}$/,                      // Germany: 5-digit
-        'GERMANY': /^\d{5}$/,
-        'FR': /^\d{5}$/,                      // France: 5-digit
-        'FRANCE': /^\d{5}$/,
-        'IT': /^\d{5}$/,                      // Italy: 5-digit
-        'ITALY': /^\d{5}$/,
-        'ES': /^\d{5}$/,                      // Spain: 5-digit
-        'SPAIN': /^\d{5}$/,
-        'NL': /^\d{4}\s[A-Z]{2}$/i,          // Netherlands: 1234 AB
-        'NETHERLANDS': /^\d{4}\s[A-Z]{2}$/i,
-        'AT': /^\d{4}$/,                      // Austria: 4-digit
-        'AUSTRIA': /^\d{4}$/,
-        'CH': /^\d{4}$/,                      // Switzerland: 4-digit
-        'SWITZERLAND': /^\d{4}$/,
-        'IN': /^\d{6}$/,                      // India: 6-digit
-        'INDIA': /^\d{6}$/,
-        'BR': /^\d{5}-\d{3}$/,                // Brazil: 12345-678
-        'BRAZIL': /^\d{5}-\d{3}$/,
-        'MX': /^\d{5}$/,                      // Mexico: 5-digit
-        'MEXICO': /^\d{5}$/,
-      };
-      
-      const countryPattern = zipPatternMap[countryDetected];
-      if (countryPattern) {
-        zipPatterns.unshift(countryPattern); // Try country-specific pattern first
-        console.log('Applied country-specific zip pattern for:', countryDetected);
-      }
-    }
-    
-    // Detect zip code using all applicable patterns
-    let zipIndex = -1;
-    for (let i = 0; i < parts.length; i++) {
-      for (const pattern of zipPatterns) {
-        if (pattern.test(parts[i])) {
-          zipIndex = i;
-          scrapedZipCode = parts[i];
-          console.log('Zip matched with pattern, index:', zipIndex, 'Value:', scrapedZipCode);
-          break;
-        }
-      }
-      if (zipIndex > -1) break;
-    }
-    
-    console.log('Detected zip at index:', zipIndex, 'Value:', scrapedZipCode);
-    
-    // Assign components based on detected zip position or count
-    if (zipIndex > 0) {
-      // If zip found, assign based on its position
-      scrapedStreetAddress = parts[0]; // First part is always street
-      
-      if (zipIndex >= 2) {
-        scrapedCity = parts[1]; // Second part is city
-        scrapedState = parts[2]; // Third part is state
-      } else if (zipIndex === 1) {
-        scrapedCity = parts[1]; // If zip is second, city is second (no state)
-      }
-    } else {
-      // No zip found, assign by position
-      if (parts.length >= 1) scrapedStreetAddress = parts[0];
-      if (parts.length >= 2) scrapedCity = parts[1];
-      if (parts.length >= 3) scrapedState = parts[2];
-      if (parts.length >= 4) scrapedZipCode = parts[3];
-    }
-    
-    // Fallback: if zip still missing, use flexible pattern to extract any postal code
-    if (!scrapedZipCode) {
-      // Try multiple fallback patterns: digits, letters+digits, digits+letters
-      const fallbackPatterns = [
-        /\b[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}\b/i,  // UK postcodes
-        /\b[A-Z]\d[A-Z]\s\d[A-Z]\d\b/i,            // Canada
-        /\b\d{5}-\d{3}\b/,                          // Brazil
-        /\b\d{3}-\d{4}\b/,                          // Japan
-        /\b\d{5}\s[A-Z]{2}\b/i,                     // Netherlands
-        /\b\d{4,6}\b/,                              // Default: 4-6 digit sequence
-      ];
-      
-      // Try patterns on both original and cleaned versions
-      for (const source of [hqClean, scrapedHeadquarters]) {
-        for (const pattern of fallbackPatterns) {
-          const zipMatch = source.match(pattern);
-          if (zipMatch) {
-            scrapedZipCode = zipMatch[0];
-            console.log('Fallback zip extraction matched:', scrapedZipCode, 'from:', source);
-            break;
-          }
-        }
-        if (scrapedZipCode) break;
-      }
-    }
-    
-    console.log('Parsed address components dynamically:', {
-      street: scrapedStreetAddress,
-      city: scrapedCity,
-      state: scrapedState,
-      zip: scrapedZipCode
-    });
-  }
-  
-  // Prefer employee directory address fields if provided
-  const directoryStreet = data.scrapedStreetAddress || '';
-  const directoryCity = data.scrapedCity || '';
-  const directoryState = data.scrapedState || '';
-  const directoryZip = data.scrapedZipCode || '';
-  
-  if (directoryStreet || directoryCity || directoryState || directoryZip) {
-    scrapedStreetAddress = directoryStreet || scrapedStreetAddress;
-    scrapedCity = directoryCity || scrapedCity;
-    scrapedState = directoryState || scrapedState;
-    scrapedZipCode = directoryZip || scrapedZipCode;
-    console.log('Using employee directory address override:', {
-      street: scrapedStreetAddress,
-      city: scrapedCity,
-      state: scrapedState,
-      zip: scrapedZipCode
-    });
-  }
-  
   console.log('Using scraped data:', { scrapedPhone, scrapedHeadquarters, scrapedEmployees, scrapedRevenue, scrapedEmail });
   
   // Convert ZoomInfo employee count to Buildata dropdown value
@@ -310,7 +148,41 @@ async function fillBuildataForm(data) {
     console.log('Converted revenue to dropdown:', scrapedRevenue, '→ value:', revenueDropdownValue, `(parsed: ${revMillions}M)`);
   }
   
-  // Employee directory count removed; rely on scrapedEmployees only.
+  // === PREBUILD SECTION ===
+  // Convert employee directory count to dropdown value (if scraped)
+  if (scrapedEmployeeDirectoryCount && !employeeDropdownValue) {
+    const empStr = scrapedEmployeeDirectoryCount.toLowerCase().replace(/,/g, '');
+    let empNum = 0;
+    
+    if (empStr.includes('k')) {
+      empNum = parseFloat(empStr.replace(/[^0-9.]/g, '')) * 1000;
+    } else if (empStr.includes('m')) {
+      empNum = parseFloat(empStr.replace(/[^0-9.]/g, '')) * 1000000;
+    } else {
+      empNum = parseInt(empStr.replace(/[^0-9]/g, '')) || 0;
+    }
+    
+    // Map to dropdown numeric values
+    if (empNum > 10000 || empStr.includes('10k+') || empStr.includes('10k+')) {
+      employeeDropdownValue = '8'; // more than 10000
+    } else if (empNum > 5000) {
+      employeeDropdownValue = '7'; // 5001 - 10000
+    } else if (empNum > 2000) {
+      employeeDropdownValue = '6'; // 2001 - 5000
+    } else if (empNum > 1000) {
+      employeeDropdownValue = '5'; // 1001 - 2000
+    } else if (empNum > 500) {
+      employeeDropdownValue = '4'; // 501 - 1000
+    } else if (empNum > 200) {
+      employeeDropdownValue = '3'; // 201 - 500
+    } else if (empNum > 50) {
+      employeeDropdownValue = '2'; // 51 - 200
+    } else if (empNum >= 1) {
+      employeeDropdownValue = '1'; // 1 - 50
+    }
+    
+    console.log('Converted directory employees to dropdown:', scrapedEmployeeDirectoryCount, '→ value:', employeeDropdownValue, `(parsed: ${empNum})`);
+  }
   // Handle Campaign dropdown - wait for completion before continuing
   let campaignSelected = false;
   if (data.campaignName && data.campaignName.trim()) {
@@ -486,7 +358,7 @@ async function fillBuildataForm(data) {
     if (parent) streetInput = parent;
   }
   if (streetInput) {
-    const streetValue = scrapedStreetAddress || data['Street Address'] || data.address || '';
+    const streetValue = scrapedStreetAddress || scrapedHeadquarters || data['Street Address'] || data.address || '';
     if (streetValue) {
       streetInput.value = streetValue;
       streetInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -555,17 +427,10 @@ async function fillBuildataForm(data) {
     if (parent) zipInput = parent;
   }
   if (zipInput) {
-    let zipValue = scrapedZipCode || data.Zip || data.zipCode || data.zip || '';
+    const zipValue = scrapedZipCode || data.Zip || data.zipCode || data.zip || '';
     if (zipValue) {
-      // Normalize to digits only and limit to first 5-6 digits
-      const zipMatch = String(zipValue).match(/\d{4,6}/);
-      zipValue = zipMatch ? zipMatch[0] : '';
-    }
-    if (zipValue) {
-      zipInput.focus();
-      zipInput.value = '';
+      zipInput.value = zipValue;
       zipInput.dispatchEvent(new Event('input', { bubbles: true }));
-      await typeSlowly(zipInput, zipValue);
       zipInput.dispatchEvent(new Event('change', { bubbles: true }));
       zipInput.dispatchEvent(new Event('blur', { bubbles: true }));
       console.log(`✓ Zip Code filled: "${zipValue}"`);
@@ -633,339 +498,158 @@ async function selectCampaign(campaignName) {
       throw new Error('Campaign dropdown button not found');
     }
     
-    console.log('Step 2: Clicking campaign button to open dropdown...');
-    
-    // Debug: log button details
-    console.log('   Button details:', {
-      tagName: campaignBtn.tagName,
-      className: campaignBtn.className,
-      type: campaignBtn.type,
-      disabled: campaignBtn.disabled,
-      visible: campaignBtn.offsetParent !== null
-    });
-    
-    // Try multiple click methods for Blazor components
-    campaignBtn.focus();
-    console.log('   ✓ Button focused');
-    await sleep(300);
-    
-    // Method 1: Standard click
+    console.log('Step 2: Clicking campaign button...');
     campaignBtn.click();
-    console.log('   ✓ Standard click executed');
-    await sleep(1000);
-    
-    // Method 2: Try keyboard Enter if standard click didn't work
-    if (!document.querySelector('.dropdown-menu.show, [role="listbox"], .ng-dropdown-panel, .cdk-overlay-pane')) {
-      console.log('   ⚠️ Standard click didn\'t open dropdown, trying keyboard Enter...');
-      campaignBtn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
-      campaignBtn.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true }));
-      await sleep(1000);
-    }
-    
-    // Method 3: Try ArrowDown if still not open
-    if (!document.querySelector('.dropdown-menu.show, [role="listbox"], .ng-dropdown-panel, .cdk-overlay-pane')) {
-      console.log('   ⚠️ Keyboard Enter didn\'t work, trying ArrowDown...');
-      campaignBtn.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
-      await sleep(1000);
-    }
-    
-    console.log('   ✓ Waiting for dropdown to render...');
-    
-    // Enhanced panel detection with more wait attempts
-    const waitForDropdownPanel = async (maxWait = 20) => {
-      const selectors = [
-        '.dropdown-menu.show',
-        '.dropdown-menu[style*="display"]',
-        '[role="listbox"]',
-        '.ng-dropdown-panel',
-        '.cdk-overlay-pane',
-        '.select2-container--open',
-        '.virtualized',
-        '[class*="dropdown"][class*="show"]',
-        '[class*="dropdown"][style*="display"]'
-      ];
-      
-      for (let i = 0; i < maxWait; i++) {
-        for (const selector of selectors) {
-          const panel = document.querySelector(selector);
-          if (panel && panel.offsetHeight > 0) {
-            console.log(`   ✓ Dropdown panel detected (${selector}) at attempt ${i + 1}`);
-            return panel;
-          }
-        }
-        if (i % 5 === 0 && i > 0) console.log(`   ⏳ Waiting for panel... (attempt ${i + 1}/${maxWait})`);
-        await sleep(250);
-      }
-      
-      // Debug: check if any panels exist but are hidden
-      const allPanels = document.querySelectorAll('[class*="dropdown"], [role="listbox"], .overlay, [class*="popup"]');
-      console.log(`   ℹ️ Found ${allPanels.length} potential panel elements (but none are visible)`);
-      return null;
-    };
-    
-    const panelElement = await waitForDropdownPanel();
-    if (!panelElement) {
-      console.warn('   ⚠️ Dropdown panel not detected after 20 attempts; trying secondary click...');
-      campaignBtn.click();
-      await sleep(1000);
-    }
+    console.log('   ✓ Button clicked, waiting 2500ms...');
+    await sleep(2500);
     
     console.log('Step 3: Looking for search input...');
-    
-    // Step 3A: Find the dropdown panel first (the one showing)
-    let dropdownPanel = null;
-    const panelSelectors = [
-      '.dropdown-menu.show',
-      '.show[class*="dropdown"]',
-      '[role="listbox"].show',
-      '.cdk-overlay-pane',
-      '.dropdown-menu[style*="display: block"]'
-    ];
-    
-    for (const selector of panelSelectors) {
-      dropdownPanel = document.querySelector(selector);
-      if (dropdownPanel) {
-        console.log(`   ✓ Found dropdown panel with selector: "${selector}"`);
-        break;
-      }
-    }
-    
-    if (!dropdownPanel) {
-      console.log('   ⚠️ No dropdown panel found with standard selectors');
-    }
-    
-    // Step 3B: The virtualized container should be INSIDE the panel
-    let virtualizedContainer = null;
-    if (dropdownPanel) {
-      virtualizedContainer = dropdownPanel.querySelector('.virtualized');
-      console.log(`   Virtualized inside panel: ${virtualizedContainer ? 'YES' : 'NO'}`);
-    }
-    
-    // Fallback: Find any visible virtualized container
-    if (!virtualizedContainer) {
-      const allVirtualized = Array.from(document.querySelectorAll('.virtualized'));
-      for (const virt of allVirtualized) {
-        if (virt.offsetHeight > 0) {
-          virtualizedContainer = virt;
-          console.log('   ✓ Found visible virtualized container as fallback');
-          break;
-        }
-      }
-    }
-    
-    // Step 3C: Find search input - MUST be inside virtualized
-    let searchInput = null;
-    
-    if (virtualizedContainer) {
-      // Log the structure we're searching in
-      const children = Array.from(virtualizedContainer.children);
-      console.log(`   Virtualized has ${children.length} direct children`);
-      children.forEach((child, idx) => {
-        console.log(`      Child ${idx}: ${child.className} - visible: ${child.offsetHeight > 0}`);
-      });
-      
-      // The input should be in a wrapper div, likely the first visible child
-      const inputWrappers = virtualizedContainer.querySelectorAll('[class*="m-"], [class*="p-"], .input-group');
-      console.log(`   Found ${inputWrappers.length} potential input wrapper elements`);
-      
-      // Try to find input in these wrappers
-      for (const wrapper of inputWrappers) {
-        const input = wrapper.querySelector('input[type="text"], input[placeholder*="Search"], input.form-control');
-        if (input && input.offsetHeight > 0) {
-          searchInput = input;
-          console.log(`   ✓ Found search input in wrapper: ${wrapper.className}`);
-          break;
-        }
-      }
-      
-      // If not found in wrappers, try direct search
-      if (!searchInput) {
-        searchInput = virtualizedContainer.querySelector('input[type="text"], input.form-control, input[placeholder*="Search"]');
-        if (searchInput && searchInput.offsetHeight > 0) {
-          console.log(`   ✓ Found search input via direct query`);
-        } else {
-          searchInput = null;
-        }
-      }
-    }
-    
-    if (!searchInput) {
-      console.log('   ⚠️ Search input not found in virtualized container');
-      // Last resort: find ANY visible text input on page near a dropdown
-      const allInputs = Array.from(document.querySelectorAll('input[type="text"], input.form-control'));
-      for (const inp of allInputs) {
-        if (inp.offsetHeight > 0 && inp.placeholder && inp.placeholder.includes('Search')) {
-          searchInput = inp;
-          console.log(`   ✓ Found search input via page-wide search`);
-          break;
-        }
-      }
-    }
-    
-    if (!searchInput && dropdownPanel) {
-      const additionalSelectors = [
-        'input.form-control[placeholder="Search..."]',
-        'input[placeholder*="Search"]'
-      ];
-      for (const selector of additionalSelectors) {
-        searchInput = dropdownPanel.querySelector(selector);
-        if (searchInput && searchInput.offsetHeight > 0) {
-          console.log(`   ✓ Found search input in panel with selector: "${selector}"`);
-          break;
-        }
-      }
-    }
-    
-    if (!searchInput) {
-      console.log('   ⚠️ Search input not found. Searching document-wide...');
-      const additionalSelectors = [
-        'input.form-control[placeholder="Search..."]',
-        'input[placeholder*="Search"]',
-        'input[type="text"]'
-      ];
-      for (const selector of additionalSelectors) {
-        searchInput = document.querySelector(selector);
-        if (searchInput && searchInput.offsetHeight > 0 && searchInput.closest('.virtualized')) {
-          console.log(`   ✓ Found search input in document with selector: "${selector}"`);
-          break;
-        }
-      }
-    }
+    // Find and focus search input with multiple fallback selectors
+    let searchInput = document.querySelector('.virtualized input.form-control[placeholder="Search..."]') ||
+          document.querySelector('.input-group input.form-control[placeholder*="Search"]') ||
+          document.querySelector('input.form-control[placeholder="Search..."]') ||
+          document.querySelector('input[placeholder*="Search"]') ||
+          document.querySelector('.dropdown-menu input.form-control') ||
+          document.querySelector('input[type="search"]') ||
+          document.querySelector('input[aria-label*="Search"]') ||
+          document.querySelector('input[role="combobox"]') ||
+          document.querySelector('input[type="text"].form-control');
     
     if (searchInput) {
-      console.log('   ✓ Found search input!');
+      console.log('   ✓ Found search input');
       console.log(`   Input element:`, searchInput);
-      console.log(`Step 4: Searching for campaign: "${campaignName}"`);
       
-      // IMPORTANT: Type the campaign name into the search input to filter
+      console.log('Step 4: Setting campaign value...');
       searchInput.focus();
-      searchInput.value = '';
+      console.log('   ✓ Focused input');
+      await sleep(1000);
       
-      // Type the campaign name/ID character by character using typeSlowly
-      // This works with any format: IDs, names, numbers, etc.
-      await typeSlowly(searchInput, campaignName.toString());
+      // Set value directly in one operation
+      console.log(`   Setting value to: "${campaignName}"`);
+      searchInput.value = campaignName;
+      console.log(`   Current value after set: "${searchInput.value}"`);
       
-      console.log(`   ✓ Typed search query into input`);
+      // Fire keyboard events that actually trigger filtering
+      console.log('   Firing keyboard events to trigger filter...');
+      for (let i = 0; i < campaignName.length; i++) {
+        searchInput.dispatchEvent(new KeyboardEvent('keydown', { 
+          key: campaignName[i], 
+          code: `Key${campaignName[i].toUpperCase()}`,
+          bubbles: true 
+        }));
+        searchInput.dispatchEvent(new KeyboardEvent('keyup', { 
+          key: campaignName[i], 
+          code: `Key${campaignName[i].toUpperCase()}`,
+          bubbles: true 
+        }));
+      }
       
-      // Wait for dropdown to filter and show matching results
-      // Longer timeout for server-side filtering
-      await sleep(2500);
-    } else {
-      console.error('   ❌ Search input not found after all attempts');
-      throw new Error(`Could not find search input in campaign dropdown`);
-    }
-    
-    console.log('Step 5: Waiting for filtered dropdown results...');
-    
-    const getDropdownItems = () => {
-      // Search inside virtualized container first (most reliable)
-      let container = virtualizedContainer || dropdownPanel || document;
+      // Also fire input event
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+      console.log('   ✓ Dispatched keyboard and input events');
       
-      // Get all dropdown items from the container
-      const items = Array.from(container.querySelectorAll('div.dropdown-item')).filter(item => {
-        const text = item.textContent.trim();
-        return text.length > 0 && item.offsetHeight > 0;
-      });
+      console.log('   Waiting for dropdown to filter to show matching campaigns...');
+      // Wait until dropdown filters to show only matching items
+      let foundMatchingItems = false;
+      let waitAttempts = 0;
+      const maxAttempts = 15;
       
-      return items;
-    };
-    
-    // Dynamic fuzzy matching - works with any campaign name/ID format
-    const matchesCampaign = (itemText, searchQuery) => {
-      const itemLower = itemText.toLowerCase().trim();
-      const queryLower = searchQuery.toLowerCase().trim();
-      
-      // Exact match
-      if (itemLower === queryLower) return true;
-      
-      // Item starts with query
-      if (itemLower.startsWith(queryLower)) return true;
-      
-      // Query is contained in item
-      if (itemLower.includes(queryLower)) return true;
-      
-      // Fuzzy: all characters from query appear in item in order (case-insensitive)
-      let queryIdx = 0;
-      for (let i = 0; i < itemLower.length && queryIdx < queryLower.length; i++) {
-        if (itemLower[i] === queryLower[queryIdx]) {
-          queryIdx++;
+      while (!foundMatchingItems && waitAttempts < maxAttempts) {
+        await sleep(300);
+        waitAttempts++;
+        
+        const tempItems = Array.from(document.querySelectorAll('div.dropdown-item'));
+        const matchingItems = tempItems.filter(item => {
+          const itemText = item.textContent.toLowerCase();
+          const searchText = campaignName.toLowerCase();
+          return itemText.includes(searchText);
+        });
+        
+        if (matchingItems.length > 0) {
+          console.log(`   ✓ Found ${matchingItems.length} matching item(s) for "${campaignName}" (attempt ${waitAttempts})`);
+          matchingItems.forEach((item, idx) => {
+            console.log(`     Match ${idx}: "${item.textContent.trim().substring(0, 50)}..."`);
+          });
+          console.log(`   Total items in dropdown: ${tempItems.length}`);
+          foundMatchingItems = true;
+        } else if (tempItems.length < 20) {
+          // If items are fewer than before, dropdown is filtering
+          console.log(`   ✓ Dropdown filtered to ${tempItems.length} items (attempt ${waitAttempts})`);
+          tempItems.forEach((item, idx) => {
+            console.log(`     Item ${idx}: "${item.textContent.trim().substring(0, 50)}..."`);
+          });
+          foundMatchingItems = true;
+        } else {
+          console.log(`   ⏳ Waiting... ${tempItems.length} total items, ${matchingItems.length} matching (attempt ${waitAttempts}/${maxAttempts})`);
         }
       }
-      if (queryIdx === queryLower.length) return true;
       
-      // Check data attributes as fallback
-      return false;
-    };
+      if (!foundMatchingItems) {
+        console.warn(`   ⚠️ Timeout waiting for filtered items after ${maxAttempts} attempts`);
+        console.log('   Note: Campaign ID "' + campaignName + '" may not exist in dropdown, or dropdown filtering is not responding');
+      }
+    } else {
+      console.warn('   ⚠️ Search input not found. Trying to select from dropdown list directly.');
+      await sleep(1000);
+    }
+    
+    console.log('Step 5: Waiting for dropdown items to appear with typed campaign name...');
     
     let dropdownItems = [];
     let foundMatch = null;
     let waitAttempts = 0;
-    const maxWaitAttempts = 60;
+    const maxWaitAttempts = 30; // Wait up to 9 seconds
     
-    // Keep checking until we find a dropdown item matching the campaign
+    // Keep checking until we find a dropdown item matching the campaign name we typed
     while (!foundMatch && waitAttempts < maxWaitAttempts) {
-      await sleep(200);
+      await sleep(300);
       waitAttempts++;
       
-      dropdownItems = getDropdownItems();
+      const virtualizedContainers = Array.from(document.querySelectorAll('div.virtualized'));
+      if (virtualizedContainers.length > 0) {
+        dropdownItems = Array.from(virtualizedContainers[0].querySelectorAll('div.dropdown-item'));
+      } else {
+        dropdownItems = Array.from(document.querySelectorAll('div.dropdown-item'));
+      }
       
       if (dropdownItems.length === 0) {
-        if (waitAttempts === 1 || waitAttempts % 10 === 0) {
-          console.log(`   ⏳ Attempt ${waitAttempts}/${maxWaitAttempts}: Waiting for filtered results...`);
+        if (waitAttempts === 1 || waitAttempts % 5 === 0) {
+          console.log(`   ⏳ Attempt ${waitAttempts}/${maxWaitAttempts}: No dropdown items yet...`);
+          console.log(`   Virtualized containers: ${virtualizedContainers.length}`);
         }
         continue;
       }
       
-      if (waitAttempts === 1) {
-        console.log(`   ✓ Attempt ${waitAttempts}: Found ${dropdownItems.length} result(s)`);
-      }
+      console.log(`   ✓ Attempt ${waitAttempts}: Found ${dropdownItems.length} dropdown items`);
       
-      const searchText = campaignName.toString().trim();
-      
-      // Try to find match using dynamic matching logic
+      // Look for item matching the campaign name
       foundMatch = dropdownItems.find(item => {
-        const itemText = (item.textContent || '').trim();
-        return matchesCampaign(itemText, searchText);
+        const itemText = item.textContent.trim();
+        const searchText = campaignName.trim();
+        return itemText === searchText || itemText.startsWith(searchText);
       });
       
-      // If still not found, try without spaces/special chars
-      if (!foundMatch) {
-        const cleanSearch = searchText.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-        if (cleanSearch.length > 2) {
-          foundMatch = dropdownItems.find(item => {
-            const itemClean = item.textContent.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-            return matchesCampaign(itemClean, cleanSearch);
-          });
-        }
-      }
-      
-      // If found, scroll to it
       if (foundMatch) {
         console.log(`   ✓✓✓ FOUND MATCH: "${foundMatch.textContent.trim()}"`);
-        foundMatch.scrollIntoView({ behavior: 'auto', block: 'center' });
-        await sleep(300);
         break;
-      }
-      
-      if (waitAttempts === 1 && dropdownItems.length > 0) {
-        console.log(`   Results (showing up to 5):`);
-        dropdownItems.slice(0, 5).forEach((item, idx) => {
-          const text = item.textContent.trim();
-          console.log(`     ${idx}: "${text}"`);
-        });
+      } else {
+        // Show first few items for debugging
+        if (waitAttempts === 1 || waitAttempts % 5 === 0) {
+          console.log(`   Waiting for "${campaignName}" to appear... Items shown:`);
+          dropdownItems.slice(0, 3).forEach((item, idx) => {
+            console.log(`     ${idx}: "${item.textContent.trim()}"`);
+          });
+        }
       }
     }
     
     if (!foundMatch) {
-      console.error(`   ❌ No matching campaign found for: "${campaignName}"`);
+      console.error(`   ❌ Campaign "${campaignName}" not found in dropdown after ${waitAttempts} attempts`);
       if (dropdownItems.length > 0) {
-        console.log(`   Results found (first 10):`);
+        console.log(`   Available items in dropdown:`);
         dropdownItems.slice(0, 10).forEach((item, idx) => {
-          const text = item.textContent.trim();
-          console.log(`     ${idx}: "${text}"`);
+          console.log(`     ${idx}: "${item.textContent.trim()}"`);
         });
-      } else {
-        console.log(`   ⚠️ No results returned from search`);
       }
       throw new Error(`Campaign "${campaignName}" not found in dropdown`);
     }
@@ -996,6 +680,10 @@ async function selectCampaign(campaignName) {
         await sleep(4000);
       } else {
         console.warn('   ⚠️ Load Specifications button not found');
+        const allButtons = Array.from(document.querySelectorAll('button'));
+        allButtons.slice(0, 10).forEach((btn, idx) => {
+          console.log(`   Button ${idx}: "${btn.textContent.trim().substring(0, 40)}..."`);
+        });
       }
     } else {
       console.log('⏭️ Auto button clicks OFF - skipping Load Specifications');
@@ -1084,13 +772,11 @@ async function setDropdown(selector, value) {
   }
 }
 
-async function typeSlowly(selectorOrElement, value) {
+async function typeSlowly(selector, value) {
   if (!value) return;
-  const el = typeof selectorOrElement === 'string'
-    ? document.querySelector(selectorOrElement)
-    : selectorOrElement;
+  const el = document.querySelector(selector);
   if (!el) {
-    console.warn(`❌ Input not found: ${selectorOrElement}`);
+    console.warn(`❌ Input not found: ${selector}`);
     return;
   }
   
@@ -1105,50 +791,39 @@ async function typeSlowly(selectorOrElement, value) {
     }
   };
   
-  const commitValue = async (val, fireEvents = true) => {
+  const commitValue = async (val) => {
     setValue(val);
-    if (fireEvents) {
-      // Fire comprehensive event sequence to trigger all filters
-      el.dispatchEvent(new Event('focus', { bubbles: true }));
-      await sleep(30);
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
-      await sleep(60);
-    }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    await sleep(60);
   };
   
   el.focus();
-  await sleep(100);
+  await sleep(80);
   
-  // Clear field first
-  await commitValue('', true);
+  // Clear then set final value in one pass
+  await commitValue('');
+  await commitValue(value);
+  el.blur();
   
-  // Type character by character with events
-  for (let i = 0; i < value.length; i++) {
-    const charToType = value[i];
-    const currentVal = el.value || '';
-    const nextVal = currentVal + charToType;
-    
-    setValue(nextVal);
-    
-    // Fire events for each character
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new KeyboardEvent('keydown', { key: charToType, code: `Key${charToType.toUpperCase()}`, bubbles: true }));
-    el.dispatchEvent(new KeyboardEvent('keypress', { key: charToType, bubbles: true }));
-    el.dispatchEvent(new KeyboardEvent('keyup', { key: charToType, code: `Key${charToType.toUpperCase()}`, bubbles: true }));
-    
-    await sleep(30);
+  // If value didn't stick (common after CSV reupload), fallback to manual typing
+  if (el.value !== value) {
+    console.warn(`⚠️ Value mismatch for ${selector}. Retrying with manual typing.`);
+    el.focus();
+    await sleep(50);
+    await commitValue('');
+    for (let i = 0; i < value.length; i++) {
+      const nextVal = (el.value || '') + value[i];
+      setValue(nextVal);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(40);
+    }
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.blur();
   }
   
-  // Final event burst to ensure all listeners fire
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  el.dispatchEvent(new Event('change', { bubbles: true }));
-  el.dispatchEvent(new Event('blur', { bubbles: true }));
-  
-  console.log(`✓ Typed "${value.substring(0, 40)}${value.length > 40 ? '...' : ''}" into ${typeof selectorOrElement === 'string' ? selectorOrElement : 'input element'}`);
-  await sleep(150);
+  console.log(`✓ Typed "${value.substring(0, 40)}${value.length > 40 ? '...' : ''}" into ${selector}`);
+  await sleep(120);
 }
 
 function sleep(ms) {

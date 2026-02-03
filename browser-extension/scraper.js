@@ -16,11 +16,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     findZoomInfoLink().then(data => sendResponse(data));
     return true;
   }
-
-  if (message.action === 'scrapeZoomInfoEmployeeDirectory') {
-    scrapeZoomInfoEmployeeDirectory().then(data => sendResponse(data));
-    return true;
-  }
 });
 
 async function findZoomInfoLink() {
@@ -117,50 +112,7 @@ async function scrapeZoomInfo() {
       if (label.textContent.includes('Headquarters')) {
         const contentSpan = label.parentElement.querySelector('span.content');
         if (contentSpan) {
-          // Get all possible text sources to avoid truncation
-          let hqText = '';
-          
-          // Method 1: Try title attribute first (often has full text)
-          if (contentSpan.title) {
-            hqText = contentSpan.title;
-          }
-          // Method 2: Try data attributes
-          else if (contentSpan.getAttribute('data-text')) {
-            hqText = contentSpan.getAttribute('data-text');
-          }
-          // Method 3: Try textContent (untruncated)
-          else if (contentSpan.textContent) {
-            hqText = contentSpan.textContent;
-          }
-          // Method 4: Try innerText
-          else if (contentSpan.innerText) {
-            hqText = contentSpan.innerText;
-          }
-          
-          hqText = hqText.trim();
-          
-          // If we still got truncated text, try to get from parent element
-          if (hqText && hqText.includes('...') && hqText.length < 50) {
-            console.log('⚠️ Headquarters text appears truncated, trying alternative methods...');
-            
-            // Try getting full text from parent containers
-            const parentContainer = contentSpan.closest('.icon-text-container') || contentSpan.closest('[class*="container"]');
-            if (parentContainer) {
-              const fullText = parentContainer.textContent.split('\n').find(line => 
-                line.includes('Strasse') || line.includes('Street') || line.includes('Ave') || line.includes('Blvd')
-              );
-              if (fullText) {
-                hqText = fullText.trim();
-              }
-            }
-          }
-          
-          // Last resort: if still truncated, log what we have for debugging
-          if (hqText.includes('...')) {
-            console.log('⚠️ Could not get full headquarters text from ZoomInfo page (CSS truncation), using what we have:', hqText);
-          }
-          
-          data.headquarters = hqText;
+          data.headquarters = contentSpan.textContent.trim();
           console.log('✓ Found HQ:', data.headquarters);
           break;
         }
@@ -241,69 +193,5 @@ async function scrapeRocketReach(message) {
     console.error('Error scraping RocketReach:', error);
   }
   
-  return data;
-}
-
-async function scrapeZoomInfoEmployeeDirectory() {
-  const data = {
-    streetAddress: '',
-    city: '',
-    state: '',
-    zipCode: ''
-  };
-  
-  try {
-    console.log('========================================');
-    console.log('ZOOMINFO EMPLOYEE DIRECTORY SCRAPER');
-    console.log('Current URL:', window.location.href);
-    console.log('========================================');
-    
-    let titleText = '';
-    const subtitleElements = document.querySelectorAll('[class*="subTitle"], [class*="subtitle"]');
-    
-    for (const el of subtitleElements) {
-      const text = el.textContent.trim();
-      if (text.includes('located in') && text.includes('employees')) {
-        titleText = text;
-        console.log('✓ Found subtitle text:', titleText);
-        break;
-      }
-    }
-    
-    if (!titleText) {
-      const bodyText = document.body.textContent;
-      const match = bodyText.match(/corporate office is located in([^.]+?)and has ([^.]+?)employees/i);
-      if (match) {
-        titleText = `corporate office is located in${match[1]}and has ${match[2]}employees`;
-        console.log('✓ Found subtitle text in body');
-      }
-    }
-    
-    if (titleText) {
-      // Extract address components
-      let locatedMatch = titleText.match(/located in\s+([^,]+),\s*([^,]+),\s*([^,]+),\s*(\d{4,6})/);
-      if (locatedMatch) {
-        data.streetAddress = locatedMatch[1].trim();
-        data.city = locatedMatch[2].trim();
-        data.state = locatedMatch[3].trim();
-        data.zipCode = locatedMatch[4].trim();
-      } else {
-        // Alternate pattern with street possibly containing extra comma
-        locatedMatch = titleText.match(/located in\s+(.+?),\s*([^,]+),\s*([^,]+),\s*(\d{4,6})/);
-        if (locatedMatch) {
-          data.streetAddress = locatedMatch[1].trim();
-          data.city = locatedMatch[2].trim();
-          data.state = locatedMatch[3].trim();
-          data.zipCode = locatedMatch[4].trim();
-        }
-      }
-    } else {
-      console.log('✗ Subtitle not found for employee directory');
-    }
-  } catch (error) {
-    console.error('Error scraping ZoomInfo employee directory:', error);
-  }
-  
-  console.log('ZoomInfo employee directory data:', data);
   return data;
 }

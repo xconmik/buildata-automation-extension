@@ -192,11 +192,6 @@ async function processNextLead() {
   const zoomData = await scrapeZoomInfo(domain);
   await sleep(2000);
   
-  // Step 1.5: Scrape ZoomInfo Employee Directory (address, zip)
-  showStatus(`Scraping ZoomInfo Employee Directory for ${company || domain}...`, 'info');
-  const zoomEmpData = await scrapeZoomInfoEmployeeDirectory(domain);
-  await sleep(2000);
-  
   // Step 2: Scrape RocketReach
   showStatus(`Scraping RocketReach for ${company || domain}...`, 'info');
   const rocketData = await scrapeRocketReach(domain);
@@ -218,11 +213,7 @@ async function processNextLead() {
     scrapedEmployees: zoomData.employees,
     scrapedRevenue: zoomData.revenue,
     scrapedZoomInfoUrl: zoomData.zoomInfoUrl,
-    scrapedEmail: rocketData.email,
-    scrapedStreetAddress: zoomEmpData.streetAddress,
-    scrapedCity: zoomEmpData.city,
-    scrapedState: zoomEmpData.state,
-    scrapedZipCode: zoomEmpData.zipCode
+    scrapedEmail: rocketData.email
   };
   
   // Step 3: Fill Buildata form
@@ -258,17 +249,6 @@ async function scrapeZoomInfo(domain) {
       domain 
     }, (response) => {
       resolve(response || { phone: '', headquarters: '', employees: '', revenue: '' });
-    });
-  });
-}
-
-async function scrapeZoomInfoEmployeeDirectory(domain) {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ 
-      action: 'scrapeZoomInfoEmployeeDirectory', 
-      domain 
-    }, (response) => {
-      resolve(response || { streetAddress: '', city: '', state: '', zipCode: '' });
     });
   });
 }
