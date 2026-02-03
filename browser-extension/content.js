@@ -495,19 +495,56 @@ async function selectCampaign(campaignName) {
     
     console.log('Step 5: Looking for dropdown items...');
     const dropdownItems = Array.from(document.querySelectorAll('div.dropdown-item'));
-    console.log(`   Found ${dropdownItems.length} dropdown items`);
+    console.log(`   Found ${dropdownItems.length} dropdown items with selector 'div.dropdown-item'`);
     
+    // Try alternative selectors if first one didn't work
+    let itemsToClick = dropdownItems;
     if (!dropdownItems.length) {
-      console.error('   ❌ FAILED: No dropdown items found');
+      console.log('   Trying alternative selectors...');
+      
+      // Try li.dropdown-item
+      itemsToClick = Array.from(document.querySelectorAll('li.dropdown-item'));
+      console.log(`   Found ${itemsToClick.length} items with selector 'li.dropdown-item'`);
+      
+      if (!itemsToClick.length) {
+        // Try .dropdown-menu a or button
+        itemsToClick = Array.from(document.querySelectorAll('.dropdown-menu a, .dropdown-menu button'));
+        console.log(`   Found ${itemsToClick.length} items with selector '.dropdown-menu a, .dropdown-menu button'`);
+      }
+      
+      if (!itemsToClick.length) {
+        // Try any element with dropdown-item class
+        itemsToClick = Array.from(document.querySelectorAll('[class*="dropdown-item"]'));
+        console.log(`   Found ${itemsToClick.length} items with selector '[class*="dropdown-item"]'`);
+      }
+      
+      if (!itemsToClick.length) {
+        // Log all elements in dropdown menu
+        const dropdownMenu = document.querySelector('.dropdown-menu');
+        if (dropdownMenu) {
+          console.log('   Found dropdown menu, logging all children:');
+          const allChildren = dropdownMenu.querySelectorAll('*');
+          console.log(`   Total children in menu: ${allChildren.length}`);
+          Array.from(allChildren).slice(0, 10).forEach((el, idx) => {
+            console.log(`   Child ${idx}: <${el.tagName} class="${el.className}"> "${el.textContent.trim().substring(0, 40)}..."`);
+          });
+        } else {
+          console.log('   No .dropdown-menu element found either');
+        }
+      }
+    }
+    
+    if (!itemsToClick.length) {
+      console.error('   ❌ FAILED: No dropdown items found with any selector');
       throw new Error('No dropdown items found');
     }
     
     // Log all available items
-    dropdownItems.forEach((item, idx) => {
+    itemsToClick.forEach((item, idx) => {
       console.log(`   Item ${idx}: "${item.textContent.trim().substring(0, 50)}..."`);
     });
     
-    const matchItem = dropdownItems.find(item => item.textContent.toLowerCase().includes(campaignName.toLowerCase())) || dropdownItems[0];
+    const matchItem = itemsToClick.find(item => item.textContent.toLowerCase().includes(campaignName.toLowerCase())) || itemsToClick[0];
     const itemText = matchItem.textContent.trim();
     console.log(`   ✓ Selected item to click: "${itemText.substring(0, 50)}..."`);
     
