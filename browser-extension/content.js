@@ -449,19 +449,31 @@ async function selectCampaign(campaignName) {
     
     if (searchInput) {
       console.log('✓ Found search input, typing campaign...');
-      searchInput.focus();
-      await sleep(800); // Increased from 500ms
-      searchInput.value = '';
-      await sleep(400); // Increased from 200ms
       
-      // Type campaign name
-      for (let char of campaignName) {
-        searchInput.value += char;
-        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-        searchInput.dispatchEvent(new Event('keyup', { bubbles: true }));
-        searchInput.dispatchEvent(new Event('change', { bubbles: true }));
-        await sleep(150); // Increased from 80ms
-      }
+      // Use native value setter to avoid duplication
+      const setValue = (val) => {
+        const prototype = Object.getPrototypeOf(searchInput);
+        const valueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+        if (valueSetter) {
+          valueSetter.call(searchInput, val);
+        } else {
+          searchInput.value = val;
+        }
+      };
+      
+      searchInput.focus();
+      await sleep(800);
+      
+      // Clear the field
+      setValue('');
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(400);
+      
+      // Set the campaign name in one pass
+      setValue(campaignName);
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+      searchInput.dispatchEvent(new Event('keyup', { bubbles: true }));
+      searchInput.dispatchEvent(new Event('change', { bubbles: true }));
       
       console.log('✓ Finished typing, waiting for dropdown...');
       await sleep(2500); // Increased from 1500ms
