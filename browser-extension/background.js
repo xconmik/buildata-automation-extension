@@ -245,31 +245,59 @@ async function searchZipCodeGoogle(street, city, state) {
     });
     
     // Wait for page to load
-    await sleep(2000);
+    await sleep(3000);
     
     let zipCode = '';
     
-    // Scrape the search results
     try {
-      const result = await chrome.tabs.sendMessage(searchTab.id, { action: 'extractZipFromGoogle' });
-      zipCode = result.zipCode || '';
-    } catch (e) {
-      // Fallback: try to extract from HTML content
-      const tabContent = await chrome.tabs.executeScript({
+      // Click first search result link
+      await chrome.tabs.executeScript({
         tabId: searchTab.id,
         code: `
-          const searchResult = document.body.innerText;
-          const zipMatch = searchResult.match(/(?:Postal Code|ZIP|Zip Code)[:\\s]+([0-9\\-A-Z]{3,10})/i);
-          zipMatch ? zipMatch[1].trim() : '';
+          const firstLink = document.querySelector('a[data-sokoban-class*="result"] h3')?.closest('a') ||
+                            document.querySelector('div[data-sokoban-class="result"] a') ||
+                            document.querySelector('a > h3')?.closest('a') ||
+                            document.querySelector('a[href*="postal"]') ||
+                            document.querySelector('.yuRUbf a');
+          if (firstLink) {
+            console.log('Clicking first result link');
+            firstLink.click();
+          }
         `
       });
-      zipCode = tabContent?.[0] || '';
+      
+      // Wait for result page to load
+      await sleep(2500);
+      
+      // Extract postal code from the result page
+      const codeResult = await chrome.tabs.executeScript({
+        tabId: searchTab.id,
+        code: `
+          const pageText = document.body.innerText;
+          
+          // Look for "Postal Code 35305" format
+          let match = pageText.match(/Postal Code[\\s:]*([0-9]{4,6})/i);
+          if (match) {
+            match[1];
+          } else {
+            // Look for other postal code patterns
+            match = pageText.match(/(?:Postal Code|ZIP|Zip Code)[:\\s]*([0-9\\-A-Z]{3,10})/i);
+            match ? match[1].trim() : '';
+          }
+        `
+      });
+      
+      zipCode = codeResult?.[0] || '';
+      console.log('Found zip code from result page:', zipCode);
+      
+    } catch (e) {
+      console.log('Error clicking first link or extracting zip:', e);
     }
     
     // Close search tab
     chrome.tabs.remove(searchTab.id);
     
-    console.log('Found zip code from Google:', zipCode);
+    console.log('Final zip code extracted:', zipCode);
     return zipCode;
     
   } catch (error) {
