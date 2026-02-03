@@ -135,6 +135,15 @@ async function fillBuildataForm(data) {
       zip: scrapedZipCode
     });
   }
+
+  // Final fallback: extract zip directly from headquarters string
+  if (!scrapedZipCode && scrapedHeadquarters) {
+    const zipMatch = scrapedHeadquarters.match(/\b\d{4,6}\b/);
+    if (zipMatch) {
+      scrapedZipCode = zipMatch[0];
+      console.log('✓ Extracted zip from headquarters:', scrapedZipCode);
+    }
+  }
   
   // Prefer employee directory address fields if provided
   const directoryStreet = data.scrapedStreetAddress || '';
