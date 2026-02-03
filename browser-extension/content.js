@@ -78,31 +78,62 @@ async function fillBuildataForm(data) {
   const scrapedRevenue = data.scrapedRevenue || '';
   const scrapedEmail = data.scrapedEmail || '';
   
-  // Parse headquarters string into address components
-  // Format: "Street Address, City, State, ZipCode, Country"
-  // Example: "Londorfer Strasse 65, Gruenberg, Hesse, 35305, Germany"
+  // Parse headquarters string into address components dynamically
+  // Handles formats like:
+  // - "Street Address, City, State, ZipCode, Country"
+  // - "Street Address, City, State, ZipCode"
+  // - "Street Address, City, State"
   let scrapedStreetAddress = '';
   let scrapedCity = '';
   let scrapedState = '';
   let scrapedZipCode = '';
   
   if (scrapedHeadquarters) {
-    console.log('Parsing headquarters:', scrapedHeadquarters);
-    const parts = scrapedHeadquarters.split(',').map(p => p.trim());
+    console.log('Parsing headquarters dynamically:', scrapedHeadquarters);
+    const parts = scrapedHeadquarters.split(',').map(p => p.trim()).filter(p => p.length > 0);
     
-    if (parts.length >= 4) {
-      scrapedStreetAddress = parts[0]; // "Londorfer Strasse 65"
-      scrapedCity = parts[1];           // "Gruenberg"
-      scrapedState = parts[2];          // "Hesse"
-      scrapedZipCode = parts[3];        // "35305"
-      
-      console.log('Parsed address components:', {
-        street: scrapedStreetAddress,
-        city: scrapedCity,
-        state: scrapedState,
-        zip: scrapedZipCode
-      });
+    console.log('Parts found:', parts, 'Count:', parts.length);
+    
+    // Dynamic assignment based on number of parts
+    // Detect zip code pattern (4-5 digits)
+    const zipPattern = /^\d{4,5}$/;
+    let zipIndex = -1;
+    
+    for (let i = 0; i < parts.length; i++) {
+      if (zipPattern.test(parts[i])) {
+        zipIndex = i;
+        scrapedZipCode = parts[i];
+        break;
+      }
     }
+    
+    console.log('Detected zip at index:', zipIndex, 'Value:', scrapedZipCode);
+    
+    // Assign components based on detected zip position or count
+    if (zipIndex > 0) {
+      // If zip found, assign based on its position
+      scrapedStreetAddress = parts[0]; // First part is always street
+      
+      if (zipIndex >= 2) {
+        scrapedCity = parts[1]; // Second part is city
+        scrapedState = parts[2]; // Third part is state
+      } else if (zipIndex === 1) {
+        scrapedCity = parts[1]; // If zip is second, city is second (no state)
+      }
+    } else {
+      // No zip found, assign by position
+      if (parts.length >= 1) scrapedStreetAddress = parts[0];
+      if (parts.length >= 2) scrapedCity = parts[1];
+      if (parts.length >= 3) scrapedState = parts[2];
+      if (parts.length >= 4) scrapedZipCode = parts[3];
+    }
+    
+    console.log('Parsed address components dynamically:', {
+      street: scrapedStreetAddress,
+      city: scrapedCity,
+      state: scrapedState,
+      zip: scrapedZipCode
+    });
   }
   
   console.log('Using scraped data:', { scrapedPhone, scrapedHeadquarters, scrapedEmployees, scrapedRevenue, scrapedEmail });
