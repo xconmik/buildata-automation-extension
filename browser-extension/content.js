@@ -471,13 +471,15 @@ async function selectCampaign(campaignName) {
     
     console.log('Step 3: Looking for search input...');
     // Find and focus search input with multiple fallback selectors
-    let searchInput = document.querySelector('input.form-control[placeholder="Search..."]') ||
-              document.querySelector('input[placeholder*="Search"]') ||
-              document.querySelector('.dropdown-menu input.form-control') ||
-              document.querySelector('input[type="search"]') ||
-              document.querySelector('input[aria-label*="Search"]') ||
-              document.querySelector('input[role="combobox"]') ||
-              document.querySelector('input[type="text"].form-control');
+    let searchInput = document.querySelector('.virtualized input.form-control[placeholder="Search..."]') ||
+          document.querySelector('.input-group input.form-control[placeholder*="Search"]') ||
+          document.querySelector('input.form-control[placeholder="Search..."]') ||
+          document.querySelector('input[placeholder*="Search"]') ||
+          document.querySelector('.dropdown-menu input.form-control') ||
+          document.querySelector('input[type="search"]') ||
+          document.querySelector('input[aria-label*="Search"]') ||
+          document.querySelector('input[role="combobox"]') ||
+          document.querySelector('input[type="text"].form-control');
     
     if (searchInput) {
       console.log('   ✓ Found search input');
@@ -569,12 +571,17 @@ async function selectCampaign(campaignName) {
       await sleep(300);
       waitAttempts++;
       
-      // Look for all dropdown-item divs
-      dropdownItems = Array.from(document.querySelectorAll('div.dropdown-item'));
+      const virtualizedContainers = Array.from(document.querySelectorAll('div.virtualized'));
+      if (virtualizedContainers.length > 0) {
+        dropdownItems = Array.from(virtualizedContainers[0].querySelectorAll('div.dropdown-item'));
+      } else {
+        dropdownItems = Array.from(document.querySelectorAll('div.dropdown-item'));
+      }
       
       if (dropdownItems.length === 0) {
         if (waitAttempts === 1 || waitAttempts % 5 === 0) {
           console.log(`   ⏳ Attempt ${waitAttempts}/${maxWaitAttempts}: No dropdown items yet...`);
+          console.log(`   Virtualized containers: ${virtualizedContainers.length}`);
         }
         continue;
       }
