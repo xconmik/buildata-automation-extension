@@ -546,92 +546,53 @@ async function selectCampaign(campaignName) {
       await sleep(1000);
     }
     
-    console.log('Step 5: Looking for dropdown items to click...');
-    console.log(`   Searching for campaign: "${campaignName}"`);
+    console.log('Step 5: Waiting for dropdown to show filtered results...');
+    await sleep(1000); // Wait for dropdown to filter
     
-    let foundItem = null;
-    let waitAttempts = 0;
-    const maxWaitAttempts = 25; // Wait up to 7.5 seconds
+    console.log('Step 6: Clicking first item in dropdown...');
     
-    // Keep trying to find the exact matching campaign
-    while (!foundItem && waitAttempts < maxWaitAttempts) {
-      await sleep(300);
-      waitAttempts++;
+    // Get the dropdown menu container
+    const dropdownMenus = Array.from(document.querySelectorAll('.dropdown-menu, [role="listbox"], [role="menu"]'));
+    console.log(`   Found ${dropdownMenus.length} dropdown container(s)`);
+    
+    if (dropdownMenus.length === 0) {
+      console.error('   ❌ No dropdown menu found');
+      throw new Error('Dropdown menu not found');
+    }
+    
+    let itemClicked = false;
+    
+    // Try to find and click the first visible item
+    for (const menu of dropdownMenus) {
+      // Get all clickable items from this menu
+      const items = menu.querySelectorAll('button, a, li, div[role="option"], [role="menuitem"]');
+      console.log(`   Menu contains ${items.length} potential items`);
       
-      // Get all dropdown items - look for clickable elements in dropdown menu
-      const dropdownMenus = Array.from(document.querySelectorAll('.dropdown-menu, [role="listbox"], [role="menu"]'));
-      
-      if (dropdownMenus.length === 0) {
-        console.log(`   ⏳ Attempt ${waitAttempts}: Dropdown menu not visible yet`);
-        continue;
-      }
-      
-      // Find all potential clickable items in the dropdown
-      const allPotentialItems = [];
-      dropdownMenus.forEach(menu => {
-        // Try to find items that are likely clickable
-        const clickableItems = menu.querySelectorAll('button, a, [role="option"], li, div[role="button"]');
-        clickableItems.forEach(item => {
-          const text = item.textContent.trim();
-          // Only include items with reasonable text length (exclude empty or huge items)
-          if (text && text.length > 0 && text.length < 200) {
-            allPotentialItems.push({ element: item, text: text });
-          }
-        });
-      });
-      
-      // Remove duplicates by comparing text content and clicking element reference
-      const uniqueItems = [];
-      const seenTexts = new Set();
-      allPotentialItems.forEach(item => {
-        if (!seenTexts.has(item.text)) {
-          seenTexts.add(item.text);
-          uniqueItems.push(item);
+      // Find first item that has text content
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const text = item.textContent.trim();
+        
+        // Skip items that are too short or are the search box
+        if (text.length > 2 && text.length < 200 && !item.classList.contains('form-control')) {
+          console.log(`   ✓ Found first clickable item: "${text.substring(0, 70)}..."`);
+          console.log('   Clicking it...');
+          item.click();
+          itemClicked = true;
+          await sleep(1000);
+          break;
         }
-      });
-      
-      console.log(`   Attempt ${waitAttempts}/${maxWaitAttempts}: Found ${uniqueItems.length} items`);
-      
-      // Look for exact match
-      const exactMatch = uniqueItems.find(item => 
-        item.text === campaignName
-      );
-      
-      // Look for match starting with campaign ID (e.g., "404677 - Campaign Name")
-      const partialMatch = uniqueItems.find(item => 
-        item.text.startsWith(campaignName)
-      );
-      
-      // Look for match containing campaign ID anywhere
-      const containsMatch = uniqueItems.find(item =>
-        item.text.includes(campaignName)
-      );
-      
-      foundItem = exactMatch || partialMatch || containsMatch;
-      
-      if (foundItem) {
-        console.log(`   ✓✓✓ FOUND MATCH: "${foundItem.text.substring(0, 80)}..."`);
-        break;
       }
       
-      // Log items every few attempts
-      if (waitAttempts === 1 || waitAttempts % 5 === 0) {
-        console.log(`   Sample items from dropdown:`);
-        uniqueItems.slice(0, 5).forEach((item, idx) => {
-          console.log(`     ${idx}: "${item.text.substring(0, 70)}..."`);
-        });
-      }
+      if (itemClicked) break;
     }
     
-    if (!foundItem) {
-      console.error(`   ❌ Campaign "${campaignName}" NOT FOUND after ${waitAttempts} attempts`);
-      throw new Error(`Campaign "${campaignName}" not found in dropdown`);
+    if (!itemClicked) {
+      console.error('   ❌ Could not find any clickable items in dropdown');
+      throw new Error('No clickable items found in dropdown');
     }
     
-    console.log('Step 6: Clicking matched campaign item...');
-    await sleep(300);
-    foundItem.element.click();
-    console.log('   ✓ Campaign item clicked, waiting 2000ms for form to update...');
+    console.log('   ✓ Item clicked, waiting 2000ms for form to update...');
     await sleep(2000);
     
     console.log('Step 7: Looking for Load Specifications button...');
@@ -651,8 +612,6 @@ async function selectCampaign(campaignName) {
         console.log(`   Button ${idx}: "${btn.textContent.trim().substring(0, 40)}..."`);
       });
     }
-    
-    console.log(`========== CAMPAIGN SELECTION COMPLETE ==========\n`);
     
   } catch (error) {
     console.error('❌❌❌ Campaign selection FAILED at step:', error.message);
