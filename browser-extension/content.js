@@ -835,25 +835,27 @@ async function selectCampaign(campaignName) {
     if (searchInput) {
       console.log('   ✓ Found search input!');
       console.log(`   Input element:`, searchInput);
-      console.log(`Step 4: Typing campaign ID into search: "${campaignName}"`);
+      console.log(`Step 4: Searching for campaign: "${campaignName}"`);
       
-      // IMPORTANT: Type the campaign ID into the search input to filter
+      // IMPORTANT: Type the campaign name into the search input to filter
       searchInput.focus();
       searchInput.value = '';
       
-      // Type the campaign ID character by character using typeSlowly
-      await typeSlowly(searchInput, campaignName);
+      // Type the campaign name/ID character by character using typeSlowly
+      // This works with any format: IDs, names, numbers, etc.
+      await typeSlowly(searchInput, campaignName.toString());
       
-      console.log(`   ✓ Typed campaign ID into search input`);
+      console.log(`   ✓ Typed search query into input`);
       
       // Wait for dropdown to filter and show matching results
-      await sleep(2000);
+      // Longer timeout for server-side filtering
+      await sleep(2500);
     } else {
       console.error('   ❌ Search input not found after all attempts');
       throw new Error(`Could not find search input in campaign dropdown`);
     }
     
-    console.log('Step 5: Waiting for filtered dropdown items...');
+    console.log('Step 5: Waiting for filtered dropdown results...');
     
     const getDropdownItems = () => {
       // Search inside virtualized container first (most reliable)
@@ -865,18 +867,40 @@ async function selectCampaign(campaignName) {
         return text.length > 0 && item.offsetHeight > 0;
       });
       
-      if (items.length > 0 && items.length !== 20) {
-        // Log only if count changed (filtered results)
-        console.log(`   ℹ️ Found ${items.length} dropdown items`);
-      }
-      
       return items;
+    };
+    
+    // Dynamic fuzzy matching - works with any campaign name/ID format
+    const matchesCampaign = (itemText, searchQuery) => {
+      const itemLower = itemText.toLowerCase().trim();
+      const queryLower = searchQuery.toLowerCase().trim();
+      
+      // Exact match
+      if (itemLower === queryLower) return true;
+      
+      // Item starts with query
+      if (itemLower.startsWith(queryLower)) return true;
+      
+      // Query is contained in item
+      if (itemLower.includes(queryLower)) return true;
+      
+      // Fuzzy: all characters from query appear in item in order (case-insensitive)
+      let queryIdx = 0;
+      for (let i = 0; i < itemLower.length && queryIdx < queryLower.length; i++) {
+        if (itemLower[i] === queryLower[queryIdx]) {
+          queryIdx++;
+        }
+      }
+      if (queryIdx === queryLower.length) return true;
+      
+      // Check data attributes as fallback
+      return false;
     };
     
     let dropdownItems = [];
     let foundMatch = null;
     let waitAttempts = 0;
-    const maxWaitAttempts = 60; // Longer wait time for filtering
+    const maxWaitAttempts = 60;
     
     // Keep checking until we find a dropdown item matching the campaign
     while (!foundMatch && waitAttempts < maxWaitAttempts) {
@@ -893,35 +917,29 @@ async function selectCampaign(campaignName) {
       }
       
       if (waitAttempts === 1) {
-        console.log(`   ✓ Attempt ${waitAttempts}: Found ${dropdownItems.length} dropdown item(s) matching search`);
+        console.log(`   ✓ Attempt ${waitAttempts}: Found ${dropdownItems.length} result(s)`);
       }
       
-      // Direct matching: look for campaign ID in item text
-      const searchText = campaignName.trim();
+      const searchText = campaignName.toString().trim();
       
-      // Try exact match first
+      // Try to find match using dynamic matching logic
       foundMatch = dropdownItems.find(item => {
         const itemText = (item.textContent || '').trim();
-        return itemText === searchText || itemText.startsWith(searchText);
+        return matchesCampaign(itemText, searchText);
       });
       
-      // Try contains match (item text contains the campaign ID)
+      // If still not found, try without spaces/special chars
       if (!foundMatch) {
-        foundMatch = dropdownItems.find(item => {
-          const itemText = (item.textContent || '').trim();
-          return itemText.includes(searchText);
-        });
+        const cleanSearch = searchText.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        if (cleanSearch.length > 2) {
+          foundMatch = dropdownItems.find(item => {
+            const itemClean = item.textContent.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+            return matchesCampaign(itemClean, cleanSearch);
+          });
+        }
       }
       
-      // Try data attributes
-      if (!foundMatch) {
-        foundMatch = dropdownItems.find(item => {
-          const itemValue = (item.getAttribute('data-value') || item.getAttribute('data-id') || '').toString();
-          return itemValue.includes(searchText) || itemValue === searchText;
-        });
-      }
-      
-      // If found, click it immediately
+      // If found, scroll to it
       if (foundMatch) {
         console.log(`   ✓✓✓ FOUND MATCH: "${foundMatch.textContent.trim()}"`);
         foundMatch.scrollIntoView({ behavior: 'auto', block: 'center' });
@@ -930,8 +948,8 @@ async function selectCampaign(campaignName) {
       }
       
       if (waitAttempts === 1 && dropdownItems.length > 0) {
-        console.log(`   Available results:`);
-        dropdownItems.slice(0, 10).forEach((item, idx) => {
+        console.log(`   Results (showing up to 5):`);
+        dropdownItems.slice(0, 5).forEach((item, idx) => {
           const text = item.textContent.trim();
           console.log(`     ${idx}: "${text}"`);
         });
@@ -939,15 +957,17 @@ async function selectCampaign(campaignName) {
     }
     
     if (!foundMatch) {
-      console.error(`   ❌ Campaign "${campaignName}" not found after typing and filtering`);
+      console.error(`   ❌ No matching campaign found for: "${campaignName}"`);
       if (dropdownItems.length > 0) {
-        console.log(`   Filtered results (first 20):`);
-        dropdownItems.slice(0, 20).forEach((item, idx) => {
+        console.log(`   Results found (first 10):`);
+        dropdownItems.slice(0, 10).forEach((item, idx) => {
           const text = item.textContent.trim();
           console.log(`     ${idx}: "${text}"`);
         });
+      } else {
+        console.log(`   ⚠️ No results returned from search`);
       }
-      throw new Error(`Campaign "${campaignName}" not found in filtered dropdown results`);
+      throw new Error(`Campaign "${campaignName}" not found in dropdown`);
     }
     
     console.log('Step 6: Clicking matched campaign item...');
