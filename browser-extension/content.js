@@ -901,7 +901,7 @@ async function typeSlowly(selectorOrElement, value) {
   
   // If value didn't stick (common after CSV reupload), fallback to manual typing
   if (el.value !== value) {
-    console.warn(`⚠️ Value mismatch for ${selector}. Retrying with manual typing.`);
+    console.warn(`⚠️ Value mismatch for ${typeof selectorOrElement === 'string' ? selectorOrElement : 'input element'}. Retrying with manual typing.`);
     el.focus();
     await sleep(50);
     await commitValue('');
@@ -915,7 +915,7 @@ async function typeSlowly(selectorOrElement, value) {
     el.blur();
   }
   
-  console.log(`✓ Typed "${value.substring(0, 40)}${value.length > 40 ? '...' : ''}" into ${selector}`);
+  console.log(`✓ Typed "${value.substring(0, 40)}${value.length > 40 ? '...' : ''}" into ${typeof selectorOrElement === 'string' ? selectorOrElement : 'input element'}`);
   await sleep(120);
 }
 
