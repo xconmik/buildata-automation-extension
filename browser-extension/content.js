@@ -527,6 +527,26 @@ async function selectCampaign(campaignName) {
     console.log('   ✓ Button clicked, waiting 2500ms...');
     await sleep(2500);
     
+    // Wait for dropdown panel or items to appear (portal/overlay aware)
+    const waitForDropdownPanel = async (maxWait = 12) => {
+      for (let i = 0; i < maxWait; i++) {
+        const panel = document.querySelector(
+          '.dropdown-menu.show, .dropdown-menu[style*="display"], [role="listbox"], .ng-dropdown-panel, .cdk-overlay-pane, .select2-container--open, .virtualized'
+        );
+        const hasItems = panel ? panel.querySelectorAll('div.dropdown-item, li.dropdown-item, [role="option"], .ng-option, .select2-results__option').length > 0 : false;
+        if (panel || hasItems) return true;
+        await sleep(250);
+      }
+      return false;
+    };
+    
+    const panelReady = await waitForDropdownPanel();
+    if (!panelReady) {
+      console.warn('   ⚠️ Dropdown panel not detected after click; retrying click...');
+      campaignBtn.click();
+      await sleep(1500);
+    }
+    
     console.log('Step 3: Looking for search input...');
     // Find dropdown panel (portal/overlay aware)
     const dropdownPanel = document.querySelector(
@@ -663,9 +683,15 @@ async function selectCampaign(campaignName) {
       
       // Look for item matching the campaign name
       foundMatch = dropdownItems.find(item => {
-        const itemText = item.textContent.trim();
+        const itemText = (item.textContent || '').trim();
+        const itemValue = (item.getAttribute('data-value') || '').trim();
         const searchText = campaignName.trim();
-        return itemText === searchText || itemText.startsWith(searchText);
+        const normItem = itemText.toLowerCase().replace(/\s+/g, '');
+        const normValue = itemValue.toLowerCase().replace(/\s+/g, '');
+        const normSearch = searchText.toLowerCase().replace(/\s+/g, '');
+        return itemText === searchText || itemText.startsWith(searchText) || itemText.includes(searchText) ||
+               normItem === normSearch || normItem.startsWith(normSearch) || normItem.includes(normSearch) ||
+               (itemValue && (itemValue === searchText || normValue.includes(normSearch)));
       });
       
       if (foundMatch) {
