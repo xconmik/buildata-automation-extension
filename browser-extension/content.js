@@ -471,25 +471,60 @@ async function selectCampaign(campaignName) {
     console.log('Step 3: Looking for search input...');
     await sleep(500); // Give dropdown time to render
     
+    // First, wait for virtualized container to appear
+    let virtualizedContainer = null;
+    let waitForContainer = 0;
+    const maxContainerWait = 20; // Wait up to 10 seconds
+    
+    while (!virtualizedContainer && waitForContainer < maxContainerWait) {
+      virtualizedContainer = document.querySelector('div.virtualized');
+      if (!virtualizedContainer) {
+        await sleep(500);
+        waitForContainer++;
+        if (waitForContainer % 5 === 0) {
+          console.log(`   ⏳ Waiting for virtualized container... (${waitForContainer}/${maxContainerWait})`);
+        }
+      } else {
+        console.log('   ✓ Found virtualized container');
+      }
+    }
+    
+    if (!virtualizedContainer) {
+      console.error('   ✗ Virtualized container never appeared');
+    }
+    
     // Debug: Show all inputs on page
     const allInputs = document.querySelectorAll('input');
     console.log(`   Found ${allInputs.length} total input elements on page`);
     allInputs.forEach((inp, idx) => {
-      if (idx < 10) { // Only log first 10
+      if (idx < 15) { // Show more inputs for debugging
         console.log(`   Input ${idx}: type="${inp.type}", class="${inp.className}", placeholder="${inp.placeholder}"`);
       }
     });
     
-    // Find and focus search input with multiple fallback selectors
-    let searchInput = document.querySelector('.virtualized input.form-control[placeholder="Search..."]') ||
-          document.querySelector('.input-group input.form-control[placeholder*="Search"]') ||
-          document.querySelector('input.form-control[placeholder="Search..."]') ||
-          document.querySelector('input[placeholder*="Search"]') ||
-          document.querySelector('.dropdown-menu input.form-control') ||
-          document.querySelector('input[type="search"]') ||
-          document.querySelector('input[aria-label*="Search"]') ||
-          document.querySelector('input[role="combobox"]') ||
-          document.querySelector('input[type="text"].form-control');
+    // Now find the search input - it should be inside virtualized container
+    let searchInput = null;
+    
+    // Try to find in virtualized container first
+    if (virtualizedContainer) {
+      searchInput = virtualizedContainer.querySelector('input.form-control[placeholder="Search..."]');
+      if (searchInput) {
+        console.log('   ✓ Found search input inside virtualized container');
+      }
+    }
+    
+    // Fallback: try other selectors
+    if (!searchInput) {
+      searchInput = document.querySelector('.virtualized input.form-control[placeholder="Search..."]') ||
+            document.querySelector('input.form-control[placeholder="Search..."]') ||
+            document.querySelector('input[placeholder="Search..."]') ||
+            document.querySelector('input[placeholder*="Search"]') ||
+            document.querySelector('input[type="text"].form-control');
+      
+      if (searchInput) {
+        console.log('   ✓ Found search input using fallback selector');
+      }
+    }
     
     if (searchInput) {
       console.log('   ✓ Found search input');
