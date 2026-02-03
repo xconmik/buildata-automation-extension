@@ -547,62 +547,114 @@ async function selectCampaign(campaignName) {
     }
     
     console.log('Step 5: Waiting for dropdown to show filtered results...');
-    await sleep(1000); // Wait for dropdown to filter
+    await sleep(1500); // Wait for dropdown to filter
     
-    console.log('Step 6: Clicking first item in dropdown...');
+    console.log('Step 6: Looking for dropdown menu container...');
     
-    // Get the dropdown menu container
-    const dropdownMenus = Array.from(document.querySelectorAll('.dropdown-menu, [role="listbox"], [role="menu"]'));
-    console.log(`   Found ${dropdownMenus.length} dropdown container(s)`);
+    // Try multiple selectors to find the dropdown menu
+    let dropdownMenu = document.querySelector('.dropdown-menu') ||
+                       document.querySelector('[role="listbox"]') ||
+                       document.querySelector('[role="menu"]') ||
+                       document.querySelector('.show.dropdown-menu') ||
+                       document.querySelector('.dropdown-menu.show');
     
-    if (dropdownMenus.length === 0) {
-      console.error('   ❌ No dropdown menu found');
+    console.log('   Trying selectors:', {
+      dropdownMenu: !!dropdownMenu,
+      show: !!document.querySelector('.show.dropdown-menu'),
+      dropdown: !!document.querySelector('.dropdown-menu'),
+      listbox: !!document.querySelector('[role="listbox"]'),
+      menu: !!document.querySelector('[role="menu"]')
+    });
+    
+    // If still not found, click the button again to make sure dropdown is open
+    if (!dropdownMenu) {
+      console.log('   ⚠️ Dropdown menu not visible, clicking button again...');
+      const campaignGroup = Array.from(document.querySelectorAll('div.form-group')).find(group => {
+        const label = group.querySelector('label');
+        return label && label.textContent.toLowerCase().includes('campaign');
+      });
+      
+      if (campaignGroup) {
+        const btn = campaignGroup.querySelector('button');
+        if (btn) {
+          btn.click();
+          console.log('   Clicked button, waiting 1000ms...');
+          await sleep(1000);
+          
+          // Try finding dropdown again
+          dropdownMenu = document.querySelector('.dropdown-menu') ||
+                        document.querySelector('[role="listbox"]') ||
+                        document.querySelector('[role="menu"]') ||
+                        document.querySelector('.show.dropdown-menu');
+        }
+      }
+    }
+    
+    if (!dropdownMenu) {
+      console.error('   ❌ Dropdown menu still not found');
+      console.log('   Visible elements check:');
+      const menus = document.querySelectorAll('[class*="dropdown"], [role*="list"], [role*="menu"]');
+      console.log(`   Found ${menus.length} potential menu containers`);
+      menus.forEach((m, idx) => {
+        const style = window.getComputedStyle(m);
+        console.log(`   Menu ${idx}: display=${style.display}, visibility=${style.visibility}, classes=${m.className}`);
+      });
       throw new Error('Dropdown menu not found');
     }
     
+    console.log('   ✓ Found dropdown menu');
+    
+    console.log('Step 7: Clicking first item in dropdown...');
+    
+    // Get all clickable items from the dropdown
+    const items = dropdownMenu.querySelectorAll('button, a, li, div[role="option"], [role="menuitem"]');
+    console.log(`   Found ${items.length} potential items in dropdown`);
+    
     let itemClicked = false;
     
-    // Try to find and click the first visible item
-    for (const menu of dropdownMenus) {
-      // Get all clickable items from this menu
-      const items = menu.querySelectorAll('button, a, li, div[role="option"], [role="menuitem"]');
-      console.log(`   Menu contains ${items.length} potential items`);
+    // Find first item that has text content
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const text = item.textContent.trim();
       
-      // Find first item that has text content
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        const text = item.textContent.trim();
+      // Skip items that are too short or are the search box
+      if (text.length > 2 && text.length < 200 && !item.classList.contains('form-control')) {
+        console.log(`   ✓ Found first clickable item: "${text.substring(0, 70)}..."`);
+        console.log('   Clicking it now...');
         
-        // Skip items that are too short or are the search box
-        if (text.length > 2 && text.length < 200 && !item.classList.contains('form-control')) {
-          console.log(`   ✓ Found first clickable item: "${text.substring(0, 70)}..."`);
-          console.log('   Clicking it...');
-          item.click();
-          itemClicked = true;
-          await sleep(1000);
-          break;
-        }
+        // Make sure item is visible and clickable
+        item.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+        await sleep(200);
+        
+        item.click();
+        itemClicked = true;
+        console.log('   ✓ Item clicked');
+        await sleep(1000);
+        break;
       }
-      
-      if (itemClicked) break;
     }
     
     if (!itemClicked) {
       console.error('   ❌ Could not find any clickable items in dropdown');
+      console.log('   All items in dropdown:');
+      items.forEach((item, idx) => {
+        const text = item.textContent.trim();
+        console.log(`     Item ${idx}: "${text.substring(0, 60)}..." (length: ${text.length})`);
+      });
       throw new Error('No clickable items found in dropdown');
     }
     
-    console.log('   ✓ Item clicked, waiting 2000ms for form to update...');
+    console.log('Step 8: Waiting for form to update after selection...');
     await sleep(2000);
     
-    console.log('Step 7: Looking for Load Specifications button...');
+    console.log('Step 9: Looking for Load Specifications button...');
     const allButtons = Array.from(document.querySelectorAll('button'));
     console.log(`   Found ${allButtons.length} buttons total`);
     
     const loadSpecBtn = allButtons.find(btn => btn.textContent.includes('Load Specifications'));
     if (loadSpecBtn) {
       console.log('   ✓ Found Load Specifications button');
-      console.log('Step 8: Clicking Load Specifications...');
+      console.log('Step 10: Clicking Load Specifications...');
       loadSpecBtn.click();
       console.log('   ✓ Clicked, waiting 4000ms for load...');
       await sleep(4000);
