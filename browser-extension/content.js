@@ -757,7 +757,44 @@ async function selectCampaign(campaignName) {
     
     console.log('Step 5: Waiting for dropdown items and searching for campaign...');
     
+    // Find and cache the dropdown panel
+    let cachedPanel = null;
+    const findDropdownPanel = () => {
+      if (!cachedPanel) {
+        const panelSelectors = [
+          '.dropdown-menu.show',
+          '.dropdown-menu[style*="display"]',
+          '[role="listbox"]',
+          '.ng-dropdown-panel',
+          '.cdk-overlay-pane',
+          '.select2-container--open',
+          '.virtualized',
+          '[class*="dropdown"][class*="show"]'
+        ];
+        
+        for (const selector of panelSelectors) {
+          const panel = document.querySelector(selector);
+          if (panel && panel.offsetHeight > 0) {
+            cachedPanel = panel;
+            console.log(`   ✓ Cached dropdown panel: ${selector}`);
+            break;
+          }
+        }
+      }
+      return cachedPanel;
+    };
+    
     const getDropdownItems = () => {
+      const panel = findDropdownPanel();
+      
+      if (!panel) {
+        console.log(`   ℹ️ No panel found, searching document-wide`);
+        // Fallback to document-wide search
+      }
+      
+      // Search scope: inside panel if found, otherwise whole document
+      const searchScope = panel || document;
+      
       // Try all possible dropdown item selectors
       const selectors = [
         'div.dropdown-item',
@@ -769,32 +806,43 @@ async function selectCampaign(campaignName) {
         '.dropdown-menu button',
         '[class*="dropdown-item"]',
         '[class*="menu-item"]',
-        '[class*="option"]'
+        '[class*="option"]',
+        'button[class*="item"]',
+        'a[class*="item"]',
+        'div[role="option"]',
+        'li[role="option"]'
       ];
       
-      let items = [];
       for (const selector of selectors) {
-        items = Array.from(document.querySelectorAll(selector)).filter(item => {
-          return item.textContent.trim().length > 0 && item.offsetHeight > 0;
+        const items = Array.from(searchScope.querySelectorAll(selector)).filter(item => {
+          const text = item.textContent.trim();
+          return text.length > 0 && item.offsetHeight > 0;
         });
         if (items.length > 0) {
-          console.log(`   ℹ️ Found ${items.length} dropdown items using selector: ${selector}`);
+          console.log(`   ℹ️ Found ${items.length} dropdown items using selector: "${selector}"`);
           return items;
         }
       }
       
-      // Also check in body for portals
-      const body = document.body;
-      if (body) {
-        items = Array.from(body.querySelectorAll('[role="option"], .ng-option, .dropdown-item, [class*="option"][class*="visible"]'))
-          .filter(item => item.offsetHeight > 0 && item.textContent.trim().length > 0);
-        if (items.length > 0) {
-          console.log(`   ℹ️ Found ${items.length} dropdown items in portal elements`);
-          return items;
+      // Debug: log all visible elements in the panel
+      if (panel) {
+        console.log(`   🔍 DEBUG: Inspecting panel for any visible elements...`);
+        const allChildren = Array.from(panel.querySelectorAll('*')).filter(el => el.offsetHeight > 0);
+        console.log(`   Found ${allChildren.length} visible elements in panel`);
+        
+        // Show first few non-empty elements
+        let shown = 0;
+        for (const el of allChildren) {
+          if (shown >= 3) break;
+          const text = el.textContent.trim().substring(0, 50);
+          if (text.length > 0) {
+            console.log(`     - ${el.tagName}.${el.className} = "${text}"`);
+            shown++;
+          }
         }
       }
       
-      return items;
+      return [];
     };
     
     let dropdownItems = [];
