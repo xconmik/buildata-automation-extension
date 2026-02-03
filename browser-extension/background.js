@@ -8,7 +8,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     scrapeZoomInfoData(message.domain).then(data => {
       sendResponse(data);
     }).catch(error => {
-      sendResponse({ phone: '', headquarters: '', employees: '', revenue: '' });
+      sendResponse({ phone: '', headquarters: '', employees: '', revenue: '', zoomInfoUrl: '' });
     });
     return true;
   }
@@ -61,9 +61,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function scrapeZoomInfoData(domain) {
-  if (!domain) return { phone: '', headquarters: '', employees: '', revenue: '' };
+  if (!domain) return { phone: '', headquarters: '', employees: '', revenue: '', zoomInfoUrl: '' };
   
-  const scrapedData = { phone: '', headquarters: '', employees: '', revenue: '' };
+  const scrapedData = { phone: '', headquarters: '', employees: '', revenue: '', zoomInfoUrl: '' };
   
   try {
     console.log('=== Starting ZoomInfo scrape for domain:', domain);
@@ -84,6 +84,7 @@ async function scrapeZoomInfoData(domain) {
       
       if (result && result.zoomInfoUrl) {
         console.log('✓ Found ZoomInfo URL:', result.zoomInfoUrl);
+        scrapedData.zoomInfoUrl = result.zoomInfoUrl;
         
         // Navigate to the ZoomInfo page
         await chrome.tabs.update(searchTab.id, { url: result.zoomInfoUrl });

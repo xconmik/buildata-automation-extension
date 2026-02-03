@@ -213,12 +213,12 @@ async function fillBuildataForm(data) {
   // Employee Range dropdown (values 1-8) - use converted value
   const empValue = employeeDropdownValue || data['Employee Range'] || data.employeeRange || '';
   console.log('Setting Employee Range:', empValue);
-  await setDropdown('div.form-group:has(label[for="employeerange"]) select.form-control', empValue);
+  await setDropdown('div.form-group:has(label[for="employeerange"]) select.form-control, div.form-group:has(label[for="employeerange"]) select.form-select', empValue);
   
   // Revenue Range dropdown (values 1-7) - use converted value
   const revValue = revenueDropdownValue || data['Revenue Range'] || data.revenueRange || '';
   console.log('Setting Revenue Range:', revValue);
-  await setDropdown('div.form-group:has(label[for="revenuerange"]) select.form-control', revValue);
+  await setDropdown('div.form-group:has(label[for="revenuerange"]) select.form-control, div.form-group:has(label[for="revenuerange"]) select.form-select', revValue);
   
   // SIC Code
   console.log('Setting SIC Code:', data['SIC Code'] || data.sicCode);
@@ -236,10 +236,11 @@ async function fillBuildataForm(data) {
   console.log('Setting Sub Industry:', data['Sub Industry'] || data.subIndustry);
   await setDropdown('div.form-group:has(label[for="subindustry"]) select.form-control', data['Sub Industry'] || data.subIndustry || '');
   
-  // Verification links
-  await typeSlowly('input#employeesizeverificationlink', data['Employee Size Verification Link'] || '');
-  await typeSlowly('input#industryverificationurl', data['Industry Verification Link'] || '');
-  await typeSlowly('input#revenueverificationurl', data['Revenue Verification Link'] || '');
+  // Verification links (fallback to ZoomInfo URL)
+  const zoomInfoUrl = data.scrapedZoomInfoUrl || data.zoomInfoUrl || data['ZoomInfo URL'] || '';
+  await typeSlowly('input#employeesizeverificationlink', data['Employee Size Verification Link'] || zoomInfoUrl);
+  await typeSlowly('input#industryverificationurl', data['Industry Verification Link'] || zoomInfoUrl);
+  await typeSlowly('input#revenueverificationurl', data['Naics/Sic/Revenue Verification Link'] || data['Revenue Verification Link'] || zoomInfoUrl);
   
   // === CONTACT PROFILE ===
   await typeSlowly('input#firstname', firstName);
@@ -406,8 +407,18 @@ async function selectCampaign(campaignName) {
   try {
     await sleep(500);
     
-    // Click the campaign dropdown button
-    let campaignBtn = document.querySelector('button.dropdown-toggle[type="button"]');
+    // Click the campaign dropdown button (scope to Campaign field)
+    let campaignBtn = null;
+    const campaignGroup = Array.from(document.querySelectorAll('div.form-group')).find(group => {
+      const label = group.querySelector('label');
+      return label && label.textContent.toLowerCase().includes('campaign');
+    });
+    if (campaignGroup) {
+      campaignBtn = campaignGroup.querySelector('button.dropdown-toggle[type="button"], button.btn.dropdown-toggle');
+    }
+    if (!campaignBtn) {
+      campaignBtn = document.querySelector('button.dropdown-toggle[type="button"], button.btn.dropdown-toggle');
+    }
     if (!campaignBtn) {
       throw new Error('Campaign dropdown button not found');
     }
@@ -418,51 +429,45 @@ async function selectCampaign(campaignName) {
     
     // Find and focus search input with multiple fallback selectors
     let searchInput = document.querySelector('input.form-control[placeholder="Search..."]') ||
-                      document.querySelector('input[placeholder*="Search"]') ||
-                      document.querySelector('.dropdown-menu input.form-control') ||
-                      document.querySelector('input[type="text"].form-control');
+              document.querySelector('input[placeholder*="Search"]') ||
+              document.querySelector('.dropdown-menu input.form-control') ||
+              document.querySelector('input[type="search"]') ||
+              document.querySelector('input[aria-label*="Search"]') ||
+              document.querySelector('input[role="combobox"]') ||
+              document.querySelector('input[type="text"].form-control');
     
-    if (!searchInput) {
-      // Try to find any visible input in dropdown menu
-      const dropdownMenu = document.querySelector('.dropdown-menu');
-      if (dropdownMenu) {
-        searchInput = dropdownMenu.querySelector('input');
+    if (searchInput) {
+      console.log('✓ Found search input, typing campaign...');
+      searchInput.focus();
+      await sleep(500);
+      searchInput.value = '';
+      await sleep(200);
+      
+      // Type campaign name
+      for (let char of campaignName) {
+        searchInput.value += char;
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        searchInput.dispatchEvent(new Event('keyup', { bubbles: true }));
+        searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+        await sleep(80);
       }
+      
+      console.log('✓ Finished typing, waiting for dropdown...');
+      await sleep(1500);
+    } else {
+      console.warn('⚠️ Search input not found. Trying to select from dropdown list directly.');
     }
     
-    if (!searchInput) {
-      console.error('❌ Search input not found. Tried multiple selectors.');
-      throw new Error('Search input not found');
-    }
-    
-    console.log('✓ Found search input, typing campaign...');
-    searchInput.focus();
-    await sleep(500);
-    searchInput.value = '';
-    await sleep(200);
-    
-    // Type campaign name
-    for (let char of campaignName) {
-      searchInput.value += char;
-      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-      searchInput.dispatchEvent(new Event('keyup', { bubbles: true }));
-      searchInput.dispatchEvent(new Event('change', { bubbles: true }));
-      await sleep(80);
-    }
-    
-    console.log('✓ Finished typing, waiting for dropdown...');
-    await sleep(1500);
-    
-    // Click the first dropdown item
-    const firstItem = document.querySelector('div.dropdown-item');
-    if (!firstItem) {
+    // Click dropdown item (match campaign name if possible)
+    const dropdownItems = Array.from(document.querySelectorAll('div.dropdown-item'));
+    if (!dropdownItems.length) {
       throw new Error('No dropdown items found');
     }
-    
-    const itemText = firstItem.textContent.trim();
-    console.log(`✓ Clicking first item: "${itemText.substring(0, 50)}..."`);
+    const matchItem = dropdownItems.find(item => item.textContent.toLowerCase().includes(campaignName.toLowerCase())) || dropdownItems[0];
+    const itemText = matchItem.textContent.trim();
+    console.log(`✓ Clicking item: "${itemText.substring(0, 50)}..."`);
     await sleep(200);
-    firstItem.click();
+    matchItem.click();
     await sleep(1200);
     
     // Click Load Specifications
@@ -484,14 +489,23 @@ async function selectCampaign(campaignName) {
 async function setDropdown(selector, value) {
   if (!value) return;
   
-  let el = document.querySelector(selector);
+  let el = null;
   
-  // If selector didn't work, try to find by label text
+  // Try direct selector first (handle multiple selectors separated by comma)
+  const selectors = selector.split(',').map(s => s.trim());
+  for (const sel of selectors) {
+    el = document.querySelector(sel);
+    if (el) break;
+  }
+  
+  // If selector didn't work, try to find by ID extracted from label[for=
   if (!el && selector.includes('label[for=')) {
     const match = selector.match(/label\[for="([^"]+)"\]/);
     if (match) {
       const labelFor = match[1];
-      el = document.querySelector(`select[id="${labelFor}"]`);
+      el = document.querySelector(`select[id="${labelFor}"]`) ||
+           document.querySelector(`select.form-select[id="${labelFor}"]`) ||
+           document.querySelector(`select.form-control[id="${labelFor}"]`);
     }
   }
   
@@ -504,7 +518,7 @@ async function setDropdown(selector, value) {
       return labelText.includes(searchText);
     });
     if (matchingGroup) {
-      el = matchingGroup.querySelector('select.form-control');
+      el = matchingGroup.querySelector('select.form-control, select.form-select');
     }
   }
   
@@ -555,26 +569,50 @@ async function typeSlowly(selector, value) {
     return;
   }
   
-  // Clear field first - use multiple methods to ensure it's empty
-  el.value = '';
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  el.dispatchEvent(new Event('change', { bubbles: true }));
-  el.focus();
-  await sleep(150);
+  // Use native value setter to avoid double-typing side effects
+  const setValue = (val) => {
+    const prototype = Object.getPrototypeOf(el);
+    const valueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+    if (valueSetter) {
+      valueSetter.call(el, val);
+    } else {
+      el.value = val;
+    }
+  };
   
-  // Type each character with delay - simplified to avoid duplicates
-  for (let i = 0; i < value.length; i++) {
-    el.value += value[i];
+  const commitValue = async (val) => {
+    setValue(val);
     el.dispatchEvent(new Event('input', { bubbles: true }));
-    await sleep(50); // Increased delay to prevent duplication
-  }
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    await sleep(60);
+  };
   
-  // Final change event
-  el.dispatchEvent(new Event('change', { bubbles: true }));
+  el.focus();
+  await sleep(80);
+  
+  // Clear then set final value in one pass
+  await commitValue('');
+  await commitValue(value);
   el.blur();
   
+  // If value didn't stick (common after CSV reupload), fallback to manual typing
+  if (el.value !== value) {
+    console.warn(`⚠️ Value mismatch for ${selector}. Retrying with manual typing.`);
+    el.focus();
+    await sleep(50);
+    await commitValue('');
+    for (let i = 0; i < value.length; i++) {
+      const nextVal = (el.value || '') + value[i];
+      setValue(nextVal);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(40);
+    }
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.blur();
+  }
+  
   console.log(`✓ Typed "${value.substring(0, 40)}${value.length > 40 ? '...' : ''}" into ${selector}`);
-  await sleep(150);
+  await sleep(120);
 }
 
 function sleep(ms) {

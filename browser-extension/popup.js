@@ -182,6 +182,7 @@ async function processNextLead() {
     scrapedHeadquarters: zoomData.headquarters,
     scrapedEmployees: zoomData.employees,
     scrapedRevenue: zoomData.revenue,
+    scrapedZoomInfoUrl: zoomData.zoomInfoUrl,
     scrapedEmail: rocketData.email
   };
   
