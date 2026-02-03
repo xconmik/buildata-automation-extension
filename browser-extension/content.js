@@ -206,41 +206,7 @@ async function fillBuildataForm(data) {
     console.log('Converted revenue to dropdown:', scrapedRevenue, '→ value:', revenueDropdownValue, `(parsed: ${revMillions}M)`);
   }
   
-  // === PREBUILD SECTION ===
-  // Convert employee directory count to dropdown value (if scraped)
-  if (scrapedEmployeeDirectoryCount && !employeeDropdownValue) {
-    const empStr = scrapedEmployeeDirectoryCount.toLowerCase().replace(/,/g, '');
-    let empNum = 0;
-    
-    if (empStr.includes('k')) {
-      empNum = parseFloat(empStr.replace(/[^0-9.]/g, '')) * 1000;
-    } else if (empStr.includes('m')) {
-      empNum = parseFloat(empStr.replace(/[^0-9.]/g, '')) * 1000000;
-    } else {
-      empNum = parseInt(empStr.replace(/[^0-9]/g, '')) || 0;
-    }
-    
-    // Map to dropdown numeric values
-    if (empNum > 10000 || empStr.includes('10k+') || empStr.includes('10k+')) {
-      employeeDropdownValue = '8'; // more than 10000
-    } else if (empNum > 5000) {
-      employeeDropdownValue = '7'; // 5001 - 10000
-    } else if (empNum > 2000) {
-      employeeDropdownValue = '6'; // 2001 - 5000
-    } else if (empNum > 1000) {
-      employeeDropdownValue = '5'; // 1001 - 2000
-    } else if (empNum > 500) {
-      employeeDropdownValue = '4'; // 501 - 1000
-    } else if (empNum > 200) {
-      employeeDropdownValue = '3'; // 201 - 500
-    } else if (empNum > 50) {
-      employeeDropdownValue = '2'; // 51 - 200
-    } else if (empNum >= 1) {
-      employeeDropdownValue = '1'; // 1 - 50
-    }
-    
-    console.log('Converted directory employees to dropdown:', scrapedEmployeeDirectoryCount, '→ value:', employeeDropdownValue, `(parsed: ${empNum})`);
-  }
+  // Employee directory count removed; rely on scrapedEmployees only.
   // Handle Campaign dropdown - wait for completion before continuing
   let campaignSelected = false;
   if (data.campaignName && data.campaignName.trim()) {
