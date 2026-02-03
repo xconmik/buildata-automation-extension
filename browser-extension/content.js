@@ -23,6 +23,35 @@ async function fillBuildataForm(data) {
   console.log('Campaign Name received:', data.campaignName);
   console.log('Full data:', data);
   
+  // Helper function to find button by partial text match (dynamically, not hardcoded)
+  const findButtonByText = (textPart) => {
+    return Array.from(document.querySelectorAll('button')).find(btn => 
+      btn.textContent.toUpperCase().includes(textPart.toUpperCase())
+    );
+  };
+  
+  // Helper function to find form input by label text (dynamically, not hardcoded)
+  const findInputByLabel = (labelText) => {
+    const labels = Array.from(document.querySelectorAll('label'));
+    const label = labels.find(l => l.textContent.toUpperCase().includes(labelText.toUpperCase()));
+    if (label && label.htmlFor) {
+      return document.getElementById(label.htmlFor);
+    }
+    return null;
+  };
+  
+  // Helper function to find and click modal button (dynamically)
+  const handleModalIfAppears = async (buttonText = 'OK') => {
+    const modalOkBtn = Array.from(document.querySelectorAll('button')).find(btn => 
+      btn.textContent.trim() === buttonText && btn.closest('.modal-content')
+    );
+    if (modalOkBtn) {
+      console.log(`⚠️ Modal appeared - clicking ${buttonText} button`);
+      modalOkBtn.click();
+      await sleep(1000);
+    }
+  };
+  
   // Parse name
   const firstLast = (data['First Name, Last Name'] || data.firstNameLastName || '').split(/,| /).map(s => s.trim()).filter(Boolean);
   const firstName = firstLast[0] || '';
@@ -150,22 +179,13 @@ async function fillBuildataForm(data) {
   await typeSlowly('input#emailaddress', scrapedEmail || data['Email Address'] || data.email || '');
   await sleep(500);
   
-  // Click Check Email button
-  const checkEmailBtn = Array.from(document.querySelectorAll('button')).find(btn => btn.textContent.includes('Check Email'));
+  // Click Check Email button - dynamically find it by text
+  const checkEmailBtn = findButtonByText('Check Email');
   if (checkEmailBtn) {
     console.log('✓ Clicking Check Email button...');
     checkEmailBtn.click();
     await sleep(2000); // Wait for email validation
-    
-    // Handle modal if it appears (requires campaign selection)
-    const modalOkBtn = Array.from(document.querySelectorAll('button')).find(btn => 
-      btn.textContent.trim() === 'OK' && btn.closest('.modal-content')
-    );
-    if (modalOkBtn) {
-      console.log('⚠️ Modal appeared - clicking OK (campaign may be required)');
-      modalOkBtn.click();
-      await sleep(1000);
-    }
+    await handleModalIfAppears('OK');
   } else {
     console.warn('⚠️ Check Email button not found');
   }
@@ -174,22 +194,13 @@ async function fillBuildataForm(data) {
   await typeSlowly('input#website', domain);
   await sleep(500);
   
-  // Click Check Suppression button
-  const checkSuppressionBtn = Array.from(document.querySelectorAll('button')).find(btn => btn.textContent.includes('Check Suppression'));
+  // Click Check Suppression button - dynamically find it
+  const checkSuppressionBtn = findButtonByText('Check Suppression');
   if (checkSuppressionBtn) {
     console.log('✓ Clicking Check Suppression button...');
     checkSuppressionBtn.click();
     await sleep(2000); // Wait for suppression check
-    
-    // Handle modal if it appears (e.g., invalid format)
-    const modalOkBtn = Array.from(document.querySelectorAll('button')).find(btn => 
-      btn.textContent.trim() === 'OK' && btn.closest('.modal-content')
-    );
-    if (modalOkBtn) {
-      console.log('⚠️ Modal appeared - clicking OK (may indicate invalid format)');
-      modalOkBtn.click();
-      await sleep(1000);
-    }
+    await handleModalIfAppears('OK');
   } else {
     console.warn('⚠️ Check Suppression button not found');
   }
@@ -197,22 +208,13 @@ async function fillBuildataForm(data) {
   await typeSlowly('input#contactlink', data['Contact Link'] || data.contactLinkedIn || '');
   await sleep(500);
   
-  // Click Check Duplicates button
-  const checkDuplicatesBtn = Array.from(document.querySelectorAll('button')).find(btn => btn.textContent.includes('Check Duplicates'));
+  // Click Check Duplicates button - dynamically find it
+  const checkDuplicatesBtn = findButtonByText('Check Duplicates');
   if (checkDuplicatesBtn) {
     console.log('✓ Clicking Check Duplicates button...');
     checkDuplicatesBtn.click();
     await sleep(2000); // Wait for duplicate check
-    
-    // Handle modal if it appears (Check Contact Link/Duplicates)
-    const modalOkBtn = Array.from(document.querySelectorAll('button')).find(btn => 
-      btn.textContent.trim() === 'OK' && btn.closest('.modal-content')
-    );
-    if (modalOkBtn) {
-      console.log('⚠️ Modal appeared - clicking OK (contact link check result)');
-      modalOkBtn.click();
-      await sleep(1000);
-    }
+    await handleModalIfAppears('OK');
   } else {
     console.warn('⚠️ Check Duplicates button not found');
   }
@@ -418,30 +420,26 @@ async function selectCampaign(campaignName) {
   try {
     await sleep(500);
     
-    console.log('Step 1: Looking for campaign dropdown button...');
-    // Click the campaign dropdown button (scope to Campaign field)
-    let campaignBtn = null;
-    const allFormGroups = document.querySelectorAll('div.form-group');
-    console.log(`   Found ${allFormGroups.length} form groups total`);
-    
-    const campaignGroup = Array.from(allFormGroups).find(group => {
-      const label = group.querySelector('label');
-      const labelText = label ? label.textContent : '';
-      console.log(`   Checking form group label: "${labelText}"`);
-      return label && label.textContent.toLowerCase().includes('campaign');
-    });
-    
-    if (campaignGroup) {
-      console.log('   ✓ Found campaign form group');
-      campaignBtn = campaignGroup.querySelector('button.dropdown-toggle[type="button"], button.btn.dropdown-toggle');
-      if (campaignBtn) {
-        console.log('   ✓ Found button in campaign group');
+    // Dynamic helper: Find dropdown button by nearby label text
+    const findDropdownButtonByLabel = (labelText) => {
+      const labels = Array.from(document.querySelectorAll('label'));
+      const label = labels.find(l => l.textContent.toUpperCase().includes(labelText.toUpperCase()));
+      if (label) {
+        const formGroup = label.closest('div.form-group');
+        if (formGroup) {
+          return formGroup.querySelector('button.dropdown-toggle, button.btn.dropdown-toggle');
+        }
       }
-    } else {
-      console.log('   ⚠️ No campaign form group found, trying generic selector');
-    }
+      return null;
+    };
     
-    if (!campaignBtn) {
+    console.log('Step 1: Looking for campaign dropdown button...');
+    let campaignBtn = findDropdownButtonByLabel('Campaign');
+    
+    if (campaignBtn) {
+      console.log('   ✓ Found campaign button using label lookup');
+    } else {
+      console.log('   ⚠️ Label lookup failed, trying generic selector...');
       campaignBtn = document.querySelector('button.dropdown-toggle[type="button"], button.btn.dropdown-toggle');
       if (campaignBtn) {
         console.log('   ✓ Found button with generic selector');
@@ -618,10 +616,7 @@ async function selectCampaign(campaignName) {
     await sleep(2000);
     
     console.log('Step 8: Looking for Load Specifications button...');
-    const allButtons = Array.from(document.querySelectorAll('button'));
-    console.log(`   Found ${allButtons.length} buttons total`);
-    
-    const loadSpecBtn = allButtons.find(btn => btn.textContent.includes('Load Specifications'));
+    const loadSpecBtn = findButtonByText('Load Specifications');
     if (loadSpecBtn) {
       console.log('   ✓ Found Load Specifications button');
       console.log('Step 9: Clicking Load Specifications...');
@@ -630,6 +625,7 @@ async function selectCampaign(campaignName) {
       await sleep(4000);
     } else {
       console.warn('   ⚠️ Load Specifications button not found');
+      const allButtons = Array.from(document.querySelectorAll('button'));
       allButtons.slice(0, 10).forEach((btn, idx) => {
         console.log(`   Button ${idx}: "${btn.textContent.trim().substring(0, 40)}..."`);
       });
