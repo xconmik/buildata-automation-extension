@@ -451,10 +451,17 @@ async function fillBuildataForm(data) {
     if (parent) zipInput = parent;
   }
   if (zipInput) {
-    const zipValue = scrapedZipCode || data.Zip || data.zipCode || data.zip || '';
+    let zipValue = scrapedZipCode || data.Zip || data.zipCode || data.zip || '';
     if (zipValue) {
-      zipInput.value = zipValue;
+      // Normalize to digits only and limit to first 5-6 digits
+      const zipMatch = String(zipValue).match(/\d{4,6}/);
+      zipValue = zipMatch ? zipMatch[0] : '';
+    }
+    if (zipValue) {
+      zipInput.focus();
+      zipInput.value = '';
       zipInput.dispatchEvent(new Event('input', { bubbles: true }));
+      await typeSlowly(zipInput, zipValue);
       zipInput.dispatchEvent(new Event('change', { bubbles: true }));
       zipInput.dispatchEvent(new Event('blur', { bubbles: true }));
       console.log(`✓ Zip Code filled: "${zipValue}"`);
