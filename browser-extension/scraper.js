@@ -16,6 +16,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     findZoomInfoLink().then(data => sendResponse(data));
     return true;
   }
+  
+  if (message.action === 'scrapeZoomInfoEmployeeDirectory') {
+    scrapeZoomInfoEmployeeDirectory().then(data => sendResponse(data));
+    return true;
+  }
 });
 
 async function findZoomInfoLink() {
@@ -191,6 +196,69 @@ async function scrapeRocketReach(message) {
     console.log('No email found on page');
   } catch (error) {
     console.error('Error scraping RocketReach:', error);
+  }
+  
+  return data;
+}
+
+async function scrapeZoomInfoEmployeeDirectory() {
+  const data = {
+    streetAddress: '',
+    city: '',
+    state: '',
+    zipCode: '',
+    employees: ''
+  };
+  
+  try {
+    console.log('========================================');
+    console.log('ZOOMINFO EMPLOYEE DIRECTORY SCRAPER');
+    console.log('Current URL:', window.location.href);
+    console.log('========================================');
+    
+    // Extract address and employee info from subtitle text
+    // Look for: "Company corporate office is located in [Address], [City], [State], [ZIP], [Country] and has [X]+ employees."
+    const subtitleEl = document.querySelector('p.subTitle');
+    if (subtitleEl) {
+      const text = subtitleEl.textContent.trim();
+      console.log('Found subtitle text:', text);
+      
+      // Parse: "Beiersdorf corporate office is located in Beiersdorfstrasse Hamburg 1-9, Hamburg, Hamburg, 20245, Germany and has 10K+ employees."
+      // Format: [Street], [City], [State], [ZIP], [Country] and has [Employees]
+      
+      // Extract employees (e.g., "10K+", "5000+", "500")
+      const empMatch = text.match(/has\s+([0-9KMB.]+\+?)\s+employees/i);
+      if (empMatch) {
+        data.employees = empMatch[1];
+        console.log('✓ Found employees:', data.employees);
+      }
+      
+      // Extract address components
+      // Pattern: "located in [address part]," -> find up to first comma after "located in"
+      const locatedMatch = text.match(/located in\s+([^,]+),\s*([^,]+),\s*([^,]+),\s*(\d{4,5}),/);
+      if (locatedMatch) {
+        data.streetAddress = locatedMatch[1].trim();
+        data.city = locatedMatch[2].trim();
+        data.state = locatedMatch[3].trim();
+        data.zipCode = locatedMatch[4].trim();
+        console.log('✓ Parsed address:', {
+          street: data.streetAddress,
+          city: data.city,
+          state: data.state,
+          zip: data.zipCode
+        });
+      }
+    } else {
+      console.log('✗ Subtitle element not found');
+    }
+    
+  } catch (error) {
+    console.error('Error scraping ZoomInfo employee directory:', error);
+  }
+  
+  console.log('ZoomInfo employee directory data:', data);
+  return data;
+
   }
   
   return data;

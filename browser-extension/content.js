@@ -77,6 +77,11 @@ async function fillBuildataForm(data) {
   const scrapedEmployees = data.scrapedEmployees || '';
   const scrapedRevenue = data.scrapedRevenue || '';
   const scrapedEmail = data.scrapedEmail || '';
+  const scrapedStreetAddress = data.scrapedStreetAddress || '';
+  const scrapedCity = data.scrapedCity || '';
+  const scrapedState = data.scrapedState || '';
+  const scrapedZipCode = data.scrapedZipCode || '';
+  const scrapedEmployeeDirectoryCount = data.scrapedEmployeeDirectoryCount || '';
   
   console.log('Using scraped data:', { scrapedPhone, scrapedHeadquarters, scrapedEmployees, scrapedRevenue, scrapedEmail });
   
@@ -149,6 +154,40 @@ async function fillBuildataForm(data) {
   }
   
   // === PREBUILD SECTION ===
+  // Convert employee directory count to dropdown value (if scraped)
+  if (scrapedEmployeeDirectoryCount && !employeeDropdownValue) {
+    const empStr = scrapedEmployeeDirectoryCount.toLowerCase().replace(/,/g, '');
+    let empNum = 0;
+    
+    if (empStr.includes('k')) {
+      empNum = parseFloat(empStr.replace(/[^0-9.]/g, '')) * 1000;
+    } else if (empStr.includes('m')) {
+      empNum = parseFloat(empStr.replace(/[^0-9.]/g, '')) * 1000000;
+    } else {
+      empNum = parseInt(empStr.replace(/[^0-9]/g, '')) || 0;
+    }
+    
+    // Map to dropdown numeric values
+    if (empNum > 10000 || empStr.includes('10k+') || empStr.includes('10k+')) {
+      employeeDropdownValue = '8'; // more than 10000
+    } else if (empNum > 5000) {
+      employeeDropdownValue = '7'; // 5001 - 10000
+    } else if (empNum > 2000) {
+      employeeDropdownValue = '6'; // 2001 - 5000
+    } else if (empNum > 1000) {
+      employeeDropdownValue = '5'; // 1001 - 2000
+    } else if (empNum > 500) {
+      employeeDropdownValue = '4'; // 501 - 1000
+    } else if (empNum > 200) {
+      employeeDropdownValue = '3'; // 201 - 500
+    } else if (empNum > 50) {
+      employeeDropdownValue = '2'; // 51 - 200
+    } else if (empNum >= 1) {
+      employeeDropdownValue = '1'; // 1 - 50
+    }
+    
+    console.log('Converted directory employees to dropdown:', scrapedEmployeeDirectoryCount, '→ value:', employeeDropdownValue, `(parsed: ${empNum})`);
+  }
   // Handle Campaign dropdown - wait for completion before continuing
   let campaignSelected = false;
   if (data.campaignName && data.campaignName.trim()) {
@@ -324,7 +363,7 @@ async function fillBuildataForm(data) {
     if (parent) streetInput = parent;
   }
   if (streetInput) {
-    const streetValue = scrapedHeadquarters || data['Street Address'] || data.address || '';
+    const streetValue = scrapedStreetAddress || scrapedHeadquarters || data['Street Address'] || data.address || '';
     if (streetValue) {
       streetInput.value = streetValue;
       streetInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -347,7 +386,7 @@ async function fillBuildataForm(data) {
     if (parent) cityInput = parent;
   }
   if (cityInput) {
-    const cityValue = data.City || data.city || '';
+    const cityValue = scrapedCity || data.City || data.city || '';
     if (cityValue) {
       cityInput.value = cityValue;
       cityInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -370,7 +409,7 @@ async function fillBuildataForm(data) {
     if (parent) stateInput = parent;
   }
   if (stateInput) {
-    const stateValue = data.State || data.state || '';
+    const stateValue = scrapedState || data.State || data.state || '';
     if (stateValue) {
       stateInput.value = stateValue;
       stateInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -393,7 +432,7 @@ async function fillBuildataForm(data) {
     if (parent) zipInput = parent;
   }
   if (zipInput) {
-    const zipValue = data.Zip || data.zipCode || data.zip || '';
+    const zipValue = scrapedZipCode || data.Zip || data.zipCode || data.zip || '';
     if (zipValue) {
       zipInput.value = zipValue;
       zipInput.dispatchEvent(new Event('input', { bubbles: true }));
