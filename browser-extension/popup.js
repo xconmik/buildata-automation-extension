@@ -213,12 +213,7 @@ async function processNextLead() {
     scrapedEmployees: zoomData.employees,
     scrapedRevenue: zoomData.revenue,
     scrapedZoomInfoUrl: zoomData.zoomInfoUrl,
-    scrapedEmail: rocketData.email,
-    scrapedStreetAddress: zoomEmpData.streetAddress,
-    scrapedCity: zoomEmpData.city,
-    scrapedState: zoomEmpData.state,
-    scrapedZipCode: zoomEmpData.zipCode,
-    scrapedEmployeeDirectoryCount: zoomEmpData.employees
+    scrapedEmail: rocketData.email
   };
   
   // Step 3: Fill Buildata form
