@@ -633,19 +633,22 @@ async function selectCampaign(campaignName) {
       throw new Error('Campaign dropdown button not found');
     }
     
-    console.log('Step 2: Clicking campaign button...');
+    console.log('Step 2: Clicking campaign button to open dropdown...');
     campaignBtn.click();
-    console.log('   ✓ Button clicked, waiting 2500ms...');
-    await sleep(2500);
+    console.log('   ✓ Button clicked, waiting for dropdown to render...');
+    await sleep(1500);
     
-    // Wait for dropdown panel or items to appear (portal/overlay aware)
-    const waitForDropdownPanel = async (maxWait = 12) => {
+    // Enhanced panel detection with more wait attempts
+    const waitForDropdownPanel = async (maxWait = 20) => {
       for (let i = 0; i < maxWait; i++) {
         const panel = document.querySelector(
           '.dropdown-menu.show, .dropdown-menu[style*="display"], [role="listbox"], .ng-dropdown-panel, .cdk-overlay-pane, .select2-container--open, .virtualized'
         );
-        const hasItems = panel ? panel.querySelectorAll('div.dropdown-item, li.dropdown-item, [role="option"], .ng-option, .select2-results__option').length > 0 : false;
-        if (panel || hasItems) return true;
+        if (panel) {
+          console.log(`   ✓ Dropdown panel detected at attempt ${i + 1}`);
+          return true;
+        }
+        if (i % 5 === 0) console.log(`   ⏳ Waiting for panel... (attempt ${i + 1}/${maxWait})`);
         await sleep(250);
       }
       return false;
@@ -653,12 +656,13 @@ async function selectCampaign(campaignName) {
     
     const panelReady = await waitForDropdownPanel();
     if (!panelReady) {
-      console.warn('   ⚠️ Dropdown panel not detected after click; retrying click...');
+      console.warn('   ⚠️ Dropdown panel not detected after 20 attempts; trying secondary click...');
       campaignBtn.click();
-      await sleep(1500);
+      await sleep(1000);
     }
     
     console.log('Step 3: Looking for search input...');
+    
     // Find dropdown panel (portal/overlay aware)
     const dropdownPanel = document.querySelector(
       '.dropdown-menu.show, .dropdown-menu[style*="display"], [role="listbox"], .ng-dropdown-panel, .cdk-overlay-pane, .select2-container--open, .virtualized'
@@ -666,7 +670,7 @@ async function selectCampaign(campaignName) {
     
     // Find and focus search input with multiple fallback selectors
     let searchInput = (dropdownPanel && dropdownPanel.querySelector(
-      'input.form-control[placeholder="Search..."], input[placeholder*="Search"], input[type="search"], input[aria-label*="Search"], input[role="combobox"], .select2-search__field, .ng-select input'
+      'input.form-control[placeholder="Search..."], input[placeholder*="Search"], input[type="search"], input[aria-label*="Search"], input[role="combobox"], .select2-search__field, .ng-select input, input[type="text"]'
     )) ||
     document.querySelector('.virtualized input.form-control[placeholder="Search..."]') ||
     document.querySelector('.input-group input.form-control[placeholder*="Search"]') ||
@@ -682,83 +686,27 @@ async function selectCampaign(campaignName) {
       console.log('   ✓ Found search input');
       console.log(`   Input element:`, searchInput);
       
-      console.log('Step 4: Setting campaign value...');
-      searchInput.focus();
-      console.log('   ✓ Focused input');
-      await sleep(1000);
+      console.log('Step 4: Typing campaign name using typeSlowly...');
       
-      // Set value directly in one operation
-      console.log(`   Setting value to: "${campaignName}"`);
-      searchInput.value = campaignName;
-      console.log(`   Current value after set: "${searchInput.value}"`);
+      // Use typeSlowly to type the campaign name character by character
+      await typeSlowly(searchInput, campaignName);
+      console.log(`   ✓ Typed "${campaignName}" into search input`);
       
-      // Fire keyboard events that actually trigger filtering
-      console.log('   Firing keyboard events to trigger filter...');
-      for (let i = 0; i < campaignName.length; i++) {
-        searchInput.dispatchEvent(new KeyboardEvent('keydown', { 
-          key: campaignName[i], 
-          code: `Key${campaignName[i].toUpperCase()}`,
-          bubbles: true 
-        }));
-        searchInput.dispatchEvent(new KeyboardEvent('keyup', { 
-          key: campaignName[i], 
-          code: `Key${campaignName[i].toUpperCase()}`,
-          bubbles: true 
-        }));
-      }
-      
-      // Also fire input event
+      // Fire input event to trigger filtering
       searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-      console.log('   ✓ Dispatched keyboard and input events');
+      searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+      console.log('   ✓ Fired input and change events');
       
-      console.log('   Waiting for dropdown to filter to show matching campaigns...');
-      // Wait until dropdown filters to show only matching items
-      let foundMatchingItems = false;
-      let waitAttempts = 0;
-      const maxAttempts = 15;
-      
-      while (!foundMatchingItems && waitAttempts < maxAttempts) {
-        await sleep(300);
-        waitAttempts++;
-        
-        const tempItems = Array.from(document.querySelectorAll('div.dropdown-item'));
-        const matchingItems = tempItems.filter(item => {
-          const itemText = item.textContent.toLowerCase();
-          const searchText = campaignName.toLowerCase();
-          return itemText.includes(searchText);
-        });
-        
-        if (matchingItems.length > 0) {
-          console.log(`   ✓ Found ${matchingItems.length} matching item(s) for "${campaignName}" (attempt ${waitAttempts})`);
-          matchingItems.forEach((item, idx) => {
-            console.log(`     Match ${idx}: "${item.textContent.trim().substring(0, 50)}..."`);
-          });
-          console.log(`   Total items in dropdown: ${tempItems.length}`);
-          foundMatchingItems = true;
-        } else if (tempItems.length < 20) {
-          // If items are fewer than before, dropdown is filtering
-          console.log(`   ✓ Dropdown filtered to ${tempItems.length} items (attempt ${waitAttempts})`);
-          tempItems.forEach((item, idx) => {
-            console.log(`     Item ${idx}: "${item.textContent.trim().substring(0, 50)}..."`);
-          });
-          foundMatchingItems = true;
-        } else {
-          console.log(`   ⏳ Waiting... ${tempItems.length} total items, ${matchingItems.length} matching (attempt ${waitAttempts}/${maxAttempts})`);
-        }
-      }
-      
-      if (!foundMatchingItems) {
-        console.warn(`   ⚠️ Timeout waiting for filtered items after ${maxAttempts} attempts`);
-        console.log('   Note: Campaign ID "' + campaignName + '" may not exist in dropdown, or dropdown filtering is not responding');
-      }
+      await sleep(1000);
     } else {
-      console.warn('   ⚠️ Search input not found. Trying to open dropdown with keyboard and select from list directly.');
+      console.warn('   ⚠️ Search input not found. Trying to navigate dropdown with keyboard...');
+      campaignBtn.focus();
       campaignBtn.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
       campaignBtn.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
-      await sleep(1000);
+      await sleep(800);
     }
     
-    console.log('Step 5: Waiting for dropdown items to appear with typed campaign name...');
+    console.log('Step 5: Waiting for dropdown items to appear...');
     
     const getDropdownItems = () => {
       const panel = document.querySelector(
@@ -767,13 +715,13 @@ async function selectCampaign(campaignName) {
       const scope = panel || document;
       return Array.from(scope.querySelectorAll(
         'div.dropdown-item, li.dropdown-item, [role="option"], .ng-option, .select2-results__option, .dropdown-menu a, .dropdown-menu button'
-      ));
+      )).filter(item => item.textContent.trim().length > 0);
     };
     
     let dropdownItems = [];
     let foundMatch = null;
     let waitAttempts = 0;
-    const maxWaitAttempts = 30; // Wait up to 9 seconds
+    const maxWaitAttempts = 30;
     
     // Keep checking until we find a dropdown item matching the campaign name we typed
     while (!foundMatch && waitAttempts < maxWaitAttempts) {
@@ -784,48 +732,59 @@ async function selectCampaign(campaignName) {
       
       if (dropdownItems.length === 0) {
         if (waitAttempts === 1 || waitAttempts % 5 === 0) {
-          console.log(`   ⏳ Attempt ${waitAttempts}/${maxWaitAttempts}: No dropdown items yet...`);
-          console.log(`   Dropdown items found: ${dropdownItems.length}`);
+          console.log(`   ⏳ Attempt ${waitAttempts}/${maxWaitAttempts}: No dropdown items found`);
         }
         continue;
       }
       
-      console.log(`   ✓ Attempt ${waitAttempts}: Found ${dropdownItems.length} dropdown items`);
+      if (waitAttempts === 1) {
+        console.log(`   ✓ Attempt ${waitAttempts}: Found ${dropdownItems.length} dropdown items`);
+      }
       
       // Look for item matching the campaign name
       foundMatch = dropdownItems.find(item => {
         const itemText = (item.textContent || '').trim();
         const itemValue = (item.getAttribute('data-value') || '').trim();
         const searchText = campaignName.trim();
+        
+        // Exact match
+        if (itemText === searchText || itemValue === searchText) return true;
+        
+        // Starts with or includes
+        if (itemText.startsWith(searchText) || itemText.includes(searchText)) return true;
+        
+        // Normalized comparison
         const normItem = itemText.toLowerCase().replace(/\s+/g, '');
         const normValue = itemValue.toLowerCase().replace(/\s+/g, '');
         const normSearch = searchText.toLowerCase().replace(/\s+/g, '');
-        return itemText === searchText || itemText.startsWith(searchText) || itemText.includes(searchText) ||
-               normItem === normSearch || normItem.startsWith(normSearch) || normItem.includes(normSearch) ||
-               (itemValue && (itemValue === searchText || normValue.includes(normSearch)));
+        
+        if (normItem === normSearch || normValue === normSearch) return true;
+        if (normItem.startsWith(normSearch) || normValue.startsWith(normSearch)) return true;
+        if (normItem.includes(normSearch)) return true;
+        
+        return false;
       });
       
       if (foundMatch) {
         console.log(`   ✓✓✓ FOUND MATCH: "${foundMatch.textContent.trim()}"`);
         break;
-      } else {
-        // Show first few items for debugging
-        if (waitAttempts === 1 || waitAttempts % 5 === 0) {
-          console.log(`   Waiting for "${campaignName}" to appear... Items shown:`);
-          dropdownItems.slice(0, 3).forEach((item, idx) => {
-            console.log(`     ${idx}: "${item.textContent.trim()}"`);
-          });
-        }
+      } else if (waitAttempts === 1 || waitAttempts % 5 === 0) {
+        console.log(`   Items in dropdown (first 5):`);
+        dropdownItems.slice(0, 5).forEach((item, idx) => {
+          console.log(`     ${idx}: "${item.textContent.trim().substring(0, 40)}..."`);
+        });
       }
     }
     
     if (!foundMatch) {
       console.error(`   ❌ Campaign "${campaignName}" not found in dropdown after ${waitAttempts} attempts`);
       if (dropdownItems.length > 0) {
-        console.log(`   Available items in dropdown:`);
+        console.log(`   Available campaigns (first 10):`);
         dropdownItems.slice(0, 10).forEach((item, idx) => {
           console.log(`     ${idx}: "${item.textContent.trim()}"`);
         });
+      } else {
+        console.error(`   ❌ NO DROPDOWN ITEMS FOUND - dropdown may not have opened`);
       }
       throw new Error(`Campaign "${campaignName}" not found in dropdown`);
     }
@@ -856,10 +815,6 @@ async function selectCampaign(campaignName) {
         await sleep(4000);
       } else {
         console.warn('   ⚠️ Load Specifications button not found');
-        const allButtons = Array.from(document.querySelectorAll('button'));
-        allButtons.slice(0, 10).forEach((btn, idx) => {
-          console.log(`   Button ${idx}: "${btn.textContent.trim().substring(0, 40)}..."`);
-        });
       }
     } else {
       console.log('⏭️ Auto button clicks OFF - skipping Load Specifications');
