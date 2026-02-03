@@ -712,33 +712,36 @@ async function selectCampaign(campaignName) {
     
     console.log('Step 3: Looking for search input...');
     
-    // Find dropdown panel (portal/overlay aware)
+    // Find the virtualized container (special scrolling list component)
+    let virtualizedContainer = document.querySelector('.virtualized');
+    if (virtualizedContainer) {
+      console.log('   ✓ Found virtualized container');
+    }
+    
+    // Find dropdown panel
     const dropdownPanel = document.querySelector(
       '.dropdown-menu.show, .dropdown-menu[style*="display"], [role="listbox"], .ng-dropdown-panel, .cdk-overlay-pane, .select2-container--open, .virtualized'
     );
     
-    // Find and focus search input with multiple fallback selectors
-    let searchInput = (dropdownPanel && dropdownPanel.querySelector(
-      'input.form-control[placeholder="Search..."], input[placeholder*="Search"], input[type="search"], input[aria-label*="Search"], input[role="combobox"], .select2-search__field, .ng-select input, input[type="text"]'
-    )) ||
-    document.querySelector('.virtualized input.form-control[placeholder="Search..."]') ||
-    document.querySelector('.input-group input.form-control[placeholder*="Search"]') ||
-    document.querySelector('input.form-control[placeholder="Search..."]') ||
-    document.querySelector('input[placeholder*="Search"]') ||
-    document.querySelector('.dropdown-menu input.form-control') ||
-    document.querySelector('input[type="search"]') ||
-    document.querySelector('input[aria-label*="Search"]') ||
-    document.querySelector('input[role="combobox"]') ||
-    document.querySelector('input[type="text"].form-control');
+    // Find search input - look inside virtualized or panel
+    let searchInput = null;
+    if (virtualizedContainer) {
+      searchInput = virtualizedContainer.querySelector('input.form-control[placeholder="Search..."], input[placeholder*="Search"]');
+    }
+    if (!searchInput && dropdownPanel) {
+      searchInput = dropdownPanel.querySelector('input.form-control[placeholder="Search..."], input[placeholder*="Search"]');
+    }
+    if (!searchInput) {
+      searchInput = document.querySelector('input.form-control[placeholder="Search..."], input[placeholder*="Search"], input[type="search"]');
+    }
     
     if (searchInput) {
       console.log('   ✓ Found search input');
       console.log(`   Input element:`, searchInput);
       
-      console.log('Step 4: Clearing search and looking for all campaigns...');
+      console.log('Step 4: Clearing search to show all campaigns...');
       
-      // Clear the search input instead of typing the campaign number
-      // This will show all available campaigns
+      // Clear the search input to show all available campaigns
       searchInput.value = '';
       searchInput.focus();
       searchInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -757,92 +760,21 @@ async function selectCampaign(campaignName) {
     
     console.log('Step 5: Waiting for dropdown items and searching for campaign...');
     
-    // Find and cache the dropdown panel
-    let cachedPanel = null;
-    const findDropdownPanel = () => {
-      if (!cachedPanel) {
-        const panelSelectors = [
-          '.dropdown-menu.show',
-          '.dropdown-menu[style*="display"]',
-          '[role="listbox"]',
-          '.ng-dropdown-panel',
-          '.cdk-overlay-pane',
-          '.select2-container--open',
-          '.virtualized',
-          '[class*="dropdown"][class*="show"]'
-        ];
-        
-        for (const selector of panelSelectors) {
-          const panel = document.querySelector(selector);
-          if (panel && panel.offsetHeight > 0) {
-            cachedPanel = panel;
-            console.log(`   ✓ Cached dropdown panel: ${selector}`);
-            break;
-          }
-        }
-      }
-      return cachedPanel;
-    };
-    
     const getDropdownItems = () => {
-      const panel = findDropdownPanel();
+      // Search inside virtualized container first (most reliable)
+      let container = virtualizedContainer || dropdownPanel || document;
       
-      if (!panel) {
-        console.log(`   ℹ️ No panel found, searching document-wide`);
-        // Fallback to document-wide search
+      // Get all dropdown items from the container
+      const items = Array.from(container.querySelectorAll('div.dropdown-item')).filter(item => {
+        const text = item.textContent.trim();
+        return text.length > 0 && item.offsetHeight > 0;
+      });
+      
+      if (items.length > 0) {
+        console.log(`   ℹ️ Found ${items.length} dropdown items in virtualized container`);
       }
       
-      // Search scope: inside panel if found, otherwise whole document
-      const searchScope = panel || document;
-      
-      // Try all possible dropdown item selectors
-      const selectors = [
-        'div.dropdown-item',
-        'li.dropdown-item',
-        '[role="option"]',
-        '.ng-option',
-        '.select2-results__option',
-        '.dropdown-menu a',
-        '.dropdown-menu button',
-        '[class*="dropdown-item"]',
-        '[class*="menu-item"]',
-        '[class*="option"]',
-        'button[class*="item"]',
-        'a[class*="item"]',
-        'div[role="option"]',
-        'li[role="option"]'
-      ];
-      
-      for (const selector of selectors) {
-        const items = Array.from(searchScope.querySelectorAll(selector)).filter(item => {
-          const text = item.textContent.trim();
-          return text.length > 0 && item.offsetHeight > 0;
-        });
-        if (items.length > 0) {
-          console.log(`   ℹ️ Found ${items.length} dropdown items using selector: "${selector}"`);
-          return items;
-        }
-      }
-      
-      // Debug: log all visible elements in the panel
-      if (panel) {
-        console.log(`   🔍 DEBUG: Inspecting panel for any visible elements...`);
-        const allChildren = Array.from(panel.querySelectorAll('*')).filter(el => el.offsetHeight > 0);
-        console.log(`   Found ${allChildren.length} visible elements in panel`);
-        
-        // Show first few non-empty elements
-        let shown = 0;
-        for (const el of allChildren) {
-          if (shown >= 3) break;
-          const text = el.textContent.trim().substring(0, 50);
-          if (text.length > 0) {
-            console.log(`     - ${el.tagName}.${el.className} = "${text}"`);
-            shown++;
-          }
-        }
-      }
-      
-      return [];
+      return items;
     };
     
     let dropdownItems = [];
@@ -893,6 +825,14 @@ async function selectCampaign(campaignName) {
         });
       }
       
+      // Scroll to item if found to ensure it's visible in virtualized list
+      if (foundMatch) {
+        console.log(`   ✓✓✓ FOUND MATCH: "${foundMatch.textContent.trim()}"`);
+        foundMatch.scrollIntoView({ behavior: 'auto', block: 'center' });
+        await sleep(300);
+        break;
+      }
+      
       // Scroll through dropdown to load more items if needed
       if (!foundMatch && dropdownItems.length > 0) {
         const lastItem = dropdownItems[dropdownItems.length - 1];
@@ -902,14 +842,11 @@ async function selectCampaign(campaignName) {
         }
       }
       
-      if (foundMatch) {
-        console.log(`   ✓✓✓ FOUND MATCH: "${foundMatch.textContent.trim()}"`);
-        break;
-      } else if (waitAttempts === 1) {
+      if (waitAttempts === 1) {
         console.log(`   Available campaigns (first 10):`);
         dropdownItems.slice(0, 10).forEach((item, idx) => {
           const text = item.textContent.trim();
-          console.log(`     ${idx}: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
+          console.log(`     ${idx}: "${text}"`);
         });
       }
     }
@@ -917,8 +854,8 @@ async function selectCampaign(campaignName) {
     if (!foundMatch) {
       console.error(`   ❌ Campaign "${campaignName}" not found in dropdown after ${waitAttempts} attempts`);
       if (dropdownItems.length > 0) {
-        console.log(`   Available campaigns (first 10):`);
-        dropdownItems.slice(0, 10).forEach((item, idx) => {
+        console.log(`   Available campaigns (first 20):`);
+        dropdownItems.slice(0, 20).forEach((item, idx) => {
           const text = item.textContent.trim();
           console.log(`     ${idx}: "${text}"`);
         });
