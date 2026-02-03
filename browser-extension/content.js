@@ -94,17 +94,71 @@ async function fillBuildataForm(data) {
     
     console.log('Parts found:', parts, 'Count:', parts.length);
     
-    // Dynamic assignment based on number of parts
-    // Detect zip code pattern (4-5 digits)
-    const zipPattern = /^\d{4,5}$/;
-    let zipIndex = -1;
+    // Detect country from the last part (if present)
+    const lastPart = parts[parts.length - 1]?.toUpperCase() || '';
+    const countryDetected = lastPart.length > 2 && lastPart.match(/^[A-Z\s]+$/) ? lastPart : null;
     
-    for (let i = 0; i < parts.length; i++) {
-      if (zipPattern.test(parts[i])) {
-        zipIndex = i;
-        scrapedZipCode = parts[i];
-        break;
+    // Dynamic zip pattern based on country
+    let zipPatterns = [
+      /^\d{4,5}$/,  // Default: 4-5 digits (Germany, Austria, Switzerland)
+    ];
+    
+    if (countryDetected) {
+      console.log('Country detected:', countryDetected);
+      
+      // Country-specific zip patterns
+      const zipPatternMap = {
+        'US': /^\d{5}(?:-\d{4})?$/,           // US: 12345 or 12345-6789
+        'USA': /^\d{5}(?:-\d{4})?$/,
+        'UK': /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i,  // UK: SW1A 1AA
+        'UNITED KINGDOM': /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i,
+        'CA': /^[A-Z]\d[A-Z]\s\d[A-Z]\d$/i,  // Canada: K1A 0B1
+        'CANADA': /^[A-Z]\d[A-Z]\s\d[A-Z]\d$/i,
+        'AU': /^\d{4}$/,                       // Australia: 4-digit
+        'AUSTRALIA': /^\d{4}$/,
+        'JP': /^\d{3}-\d{4}$/,                // Japan: 123-4567
+        'JAPAN': /^\d{3}-\d{4}$/,
+        'DE': /^\d{5}$/,                      // Germany: 5-digit
+        'GERMANY': /^\d{5}$/,
+        'FR': /^\d{5}$/,                      // France: 5-digit
+        'FRANCE': /^\d{5}$/,
+        'IT': /^\d{5}$/,                      // Italy: 5-digit
+        'ITALY': /^\d{5}$/,
+        'ES': /^\d{5}$/,                      // Spain: 5-digit
+        'SPAIN': /^\d{5}$/,
+        'NL': /^\d{4}\s[A-Z]{2}$/i,          // Netherlands: 1234 AB
+        'NETHERLANDS': /^\d{4}\s[A-Z]{2}$/i,
+        'AT': /^\d{4}$/,                      // Austria: 4-digit
+        'AUSTRIA': /^\d{4}$/,
+        'CH': /^\d{4}$/,                      // Switzerland: 4-digit
+        'SWITZERLAND': /^\d{4}$/,
+        'IN': /^\d{6}$/,                      // India: 6-digit
+        'INDIA': /^\d{6}$/,
+        'BR': /^\d{5}-\d{3}$/,                // Brazil: 12345-678
+        'BRAZIL': /^\d{5}-\d{3}$/,
+        'MX': /^\d{5}$/,                      // Mexico: 5-digit
+        'MEXICO': /^\d{5}$/,
+      };
+      
+      const countryPattern = zipPatternMap[countryDetected];
+      if (countryPattern) {
+        zipPatterns.unshift(countryPattern); // Try country-specific pattern first
+        console.log('Applied country-specific zip pattern for:', countryDetected);
       }
+    }
+    
+    // Detect zip code using all applicable patterns
+    let zipIndex = -1;
+    for (let i = 0; i < parts.length; i++) {
+      for (const pattern of zipPatterns) {
+        if (pattern.test(parts[i])) {
+          zipIndex = i;
+          scrapedZipCode = parts[i];
+          console.log('Zip matched with pattern, index:', zipIndex, 'Value:', scrapedZipCode);
+          break;
+        }
+      }
+      if (zipIndex > -1) break;
     }
     
     console.log('Detected zip at index:', zipIndex, 'Value:', scrapedZipCode);
@@ -128,11 +182,25 @@ async function fillBuildataForm(data) {
       if (parts.length >= 4) scrapedZipCode = parts[3];
     }
     
-    // Fallback: if zip still missing, extract any 4-6 digit sequence
+    // Fallback: if zip still missing, use flexible pattern to extract any postal code
     if (!scrapedZipCode) {
-      const zipMatch = scrapedHeadquarters.match(/\b\d{4,6}\b/);
-      if (zipMatch) {
-        scrapedZipCode = zipMatch[0];
+      // Try multiple fallback patterns: digits, letters+digits, digits+letters
+      const fallbackPatterns = [
+        /\b[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}\b/i,  // UK postcodes
+        /\b[A-Z]\d[A-Z]\s\d[A-Z]\d\b/i,            // Canada
+        /\b\d{5}-\d{3}\b/,                          // Brazil
+        /\b\d{3}-\d{4}\b/,                          // Japan
+        /\b\d{5}\s[A-Z]{2}\b/i,                     // Netherlands
+        /\b\d{4,6}\b/,                              // Default: 4-6 digit sequence
+      ];
+      
+      for (const pattern of fallbackPatterns) {
+        const zipMatch = scrapedHeadquarters.match(pattern);
+        if (zipMatch) {
+          scrapedZipCode = zipMatch[0];
+          console.log('Fallback zip extraction matched:', scrapedZipCode);
+          break;
+        }
       }
     }
     
