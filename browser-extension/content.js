@@ -735,11 +735,16 @@ async function selectCampaign(campaignName) {
       console.log('   ✓ Found search input');
       console.log(`   Input element:`, searchInput);
       
-      console.log('Step 4: Typing campaign name using enhanced typeSlowly...');
+      console.log('Step 4: Clearing search and looking for all campaigns...');
       
-      // Use typeSlowly to type the campaign name character by character
-      await typeSlowly(searchInput, campaignName);
-      console.log(`   ✓ Typed "${campaignName}" into search input`);
+      // Clear the search input instead of typing the campaign number
+      // This will show all available campaigns
+      searchInput.value = '';
+      searchInput.focus();
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+      searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+      
+      console.log(`   ✓ Cleared search to show all campaigns`);
       
       await sleep(1500);
     } else {
@@ -750,7 +755,7 @@ async function selectCampaign(campaignName) {
       await sleep(800);
     }
     
-    console.log('Step 5: Waiting for dropdown items to appear...');
+    console.log('Step 5: Waiting for dropdown items and searching for campaign...');
     
     const getDropdownItems = () => {
       // Try all possible dropdown item selectors
@@ -797,7 +802,7 @@ async function selectCampaign(campaignName) {
     let waitAttempts = 0;
     const maxWaitAttempts = 30;
     
-    // Keep checking until we find a dropdown item matching the campaign name we typed
+    // Keep checking until we find a dropdown item matching the campaign
     while (!foundMatch && waitAttempts < maxWaitAttempts) {
       await sleep(300);
       waitAttempts++;
@@ -815,72 +820,61 @@ async function selectCampaign(campaignName) {
         console.log(`   ✓ Attempt ${waitAttempts}: Found ${dropdownItems.length} dropdown items`);
       }
       
-      // Dynamic matching: try multiple strategies
-      const searchText = campaignName.trim().toLowerCase();
+      // Direct matching: look for campaign ID in item text
+      const searchText = campaignName.trim();
       
-      // Strategy 1: Exact or starts-with match
+      // Try exact match first
       foundMatch = dropdownItems.find(item => {
-        const itemText = (item.textContent || '').trim().toLowerCase();
-        return itemText === searchText || itemText.startsWith(searchText);
+        const itemText = (item.textContent || '').trim();
+        return itemText === searchText;
       });
       
-      // Strategy 2: Includes match
+      // Try contains match (item text contains the campaign ID)
       if (!foundMatch) {
         foundMatch = dropdownItems.find(item => {
-          const itemText = (item.textContent || '').trim().toLowerCase();
+          const itemText = (item.textContent || '').trim();
           return itemText.includes(searchText);
         });
       }
       
-      // Strategy 3: Check data-value or data-id attribute
+      // Try data attributes
       if (!foundMatch) {
         foundMatch = dropdownItems.find(item => {
-          const itemValue = (item.getAttribute('data-value') || item.getAttribute('data-id') || '').toLowerCase();
+          const itemValue = (item.getAttribute('data-value') || item.getAttribute('data-id') || '').toString();
           return itemValue.includes(searchText) || itemValue === searchText;
         });
       }
       
-      // Strategy 4: Fuzzy match (contains most characters in order)
-      if (!foundMatch && searchText.length > 0) {
-        foundMatch = dropdownItems.find(item => {
-          const itemText = (item.textContent || '').trim().toLowerCase();
-          let searchIdx = 0;
-          for (let i = 0; i < itemText.length && searchIdx < searchText.length; i++) {
-            if (itemText[i] === searchText[searchIdx]) {
-              searchIdx++;
-            }
-          }
-          return searchIdx === searchText.length; // All chars found in order
-        });
+      // Scroll through dropdown to load more items if needed
+      if (!foundMatch && dropdownItems.length > 0) {
+        const lastItem = dropdownItems[dropdownItems.length - 1];
+        if (lastItem) {
+          lastItem.scrollIntoView({ behavior: 'auto', block: 'end' });
+          console.log(`   ↻ Scrolling dropdown to load more items...`);
+        }
       }
       
       if (foundMatch) {
         console.log(`   ✓✓✓ FOUND MATCH: "${foundMatch.textContent.trim()}"`);
         break;
-      } else if (waitAttempts === 1 || waitAttempts % 5 === 0) {
-        console.log(`   Items in dropdown (first 5):`);
-        dropdownItems.slice(0, 5).forEach((item, idx) => {
-          console.log(`     ${idx}: "${item.textContent.trim().substring(0, 40)}..."`);
+      } else if (waitAttempts === 1) {
+        console.log(`   Available campaigns (first 10):`);
+        dropdownItems.slice(0, 10).forEach((item, idx) => {
+          const text = item.textContent.trim();
+          console.log(`     ${idx}: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
         });
       }
     }
     
-    // If no match found but we have items, auto-select first item or show error
-    if (!foundMatch && dropdownItems.length > 0) {
-      console.warn(`   ⚠️ Campaign "${campaignName}" not found using all strategies after ${waitAttempts} attempts`);
-      console.log(`   Available campaigns (first 10):`);
-      dropdownItems.slice(0, 10).forEach((item, idx) => {
-        console.log(`     ${idx}: "${item.textContent.trim()}"`);
-      });
-      
-      // Fallback: If there are items, show them for manual selection later
-      // For now, throw error with full list
-      const campaignList = dropdownItems.slice(0, 5).map(i => `"${i.textContent.trim()}"`).join(', ');
-      throw new Error(`Campaign "${campaignName}" not found in dropdown. Available: ${campaignList}`);
-    }
-    
     if (!foundMatch) {
       console.error(`   ❌ Campaign "${campaignName}" not found in dropdown after ${waitAttempts} attempts`);
+      if (dropdownItems.length > 0) {
+        console.log(`   Available campaigns (first 10):`);
+        dropdownItems.slice(0, 10).forEach((item, idx) => {
+          const text = item.textContent.trim();
+          console.log(`     ${idx}: "${text}"`);
+        });
+      }
       throw new Error(`Campaign "${campaignName}" not found in dropdown`);
     }
     
