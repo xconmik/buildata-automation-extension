@@ -835,29 +835,25 @@ async function selectCampaign(campaignName) {
     if (searchInput) {
       console.log('   ✓ Found search input!');
       console.log(`   Input element:`, searchInput);
-      console.log('Step 4: Clearing search to show all campaigns...');
+      console.log(`Step 4: Typing campaign ID into search: "${campaignName}"`);
       
-      // Clear the search input to show all available campaigns
-      searchInput.value = '';
+      // IMPORTANT: Type the campaign ID into the search input to filter
       searchInput.focus();
-      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-      searchInput.dispatchEvent(new Event('change', { bubbles: true }));
-      searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
-      searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Backspace', bubbles: true }));
+      searchInput.value = '';
       
-      console.log(`   ✓ Cleared search to show all campaigns`);
+      // Type the campaign ID character by character using typeSlowly
+      await typeSlowly(searchInput, campaignName);
       
+      console.log(`   ✓ Typed campaign ID into search input`);
+      
+      // Wait for dropdown to filter and show matching results
       await sleep(2000);
     } else {
-      console.error('   ❌ Search input STILL not found after all attempts');
-      console.log('   Trying to navigate dropdown with keyboard instead...');
-      campaignBtn.focus();
-      campaignBtn.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
-      campaignBtn.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
-      await sleep(1000);
+      console.error('   ❌ Search input not found after all attempts');
+      throw new Error(`Could not find search input in campaign dropdown`);
     }
     
-    console.log('Step 5: Waiting for dropdown items and searching for campaign...');
+    console.log('Step 5: Waiting for filtered dropdown items...');
     
     const getDropdownItems = () => {
       // Search inside virtualized container first (most reliable)
@@ -869,8 +865,9 @@ async function selectCampaign(campaignName) {
         return text.length > 0 && item.offsetHeight > 0;
       });
       
-      if (items.length > 0) {
-        console.log(`   ℹ️ Found ${items.length} dropdown items in virtualized container`);
+      if (items.length > 0 && items.length !== 20) {
+        // Log only if count changed (filtered results)
+        console.log(`   ℹ️ Found ${items.length} dropdown items`);
       }
       
       return items;
@@ -879,24 +876,24 @@ async function selectCampaign(campaignName) {
     let dropdownItems = [];
     let foundMatch = null;
     let waitAttempts = 0;
-    const maxWaitAttempts = 30;
+    const maxWaitAttempts = 60; // Longer wait time for filtering
     
     // Keep checking until we find a dropdown item matching the campaign
     while (!foundMatch && waitAttempts < maxWaitAttempts) {
-      await sleep(300);
+      await sleep(200);
       waitAttempts++;
       
       dropdownItems = getDropdownItems();
       
       if (dropdownItems.length === 0) {
-        if (waitAttempts === 1 || waitAttempts % 5 === 0) {
-          console.log(`   ⏳ Attempt ${waitAttempts}/${maxWaitAttempts}: No dropdown items found`);
+        if (waitAttempts === 1 || waitAttempts % 10 === 0) {
+          console.log(`   ⏳ Attempt ${waitAttempts}/${maxWaitAttempts}: Waiting for filtered results...`);
         }
         continue;
       }
       
       if (waitAttempts === 1) {
-        console.log(`   ✓ Attempt ${waitAttempts}: Found ${dropdownItems.length} dropdown items`);
+        console.log(`   ✓ Attempt ${waitAttempts}: Found ${dropdownItems.length} dropdown item(s) matching search`);
       }
       
       // Direct matching: look for campaign ID in item text
@@ -905,7 +902,7 @@ async function selectCampaign(campaignName) {
       // Try exact match first
       foundMatch = dropdownItems.find(item => {
         const itemText = (item.textContent || '').trim();
-        return itemText === searchText;
+        return itemText === searchText || itemText.startsWith(searchText);
       });
       
       // Try contains match (item text contains the campaign ID)
@@ -924,7 +921,7 @@ async function selectCampaign(campaignName) {
         });
       }
       
-      // Scroll to item if found to ensure it's visible in virtualized list
+      // If found, click it immediately
       if (foundMatch) {
         console.log(`   ✓✓✓ FOUND MATCH: "${foundMatch.textContent.trim()}"`);
         foundMatch.scrollIntoView({ behavior: 'auto', block: 'center' });
@@ -932,17 +929,8 @@ async function selectCampaign(campaignName) {
         break;
       }
       
-      // Scroll through dropdown to load more items if needed
-      if (!foundMatch && dropdownItems.length > 0) {
-        const lastItem = dropdownItems[dropdownItems.length - 1];
-        if (lastItem) {
-          lastItem.scrollIntoView({ behavior: 'auto', block: 'end' });
-          console.log(`   ↻ Scrolling dropdown to load more items...`);
-        }
-      }
-      
-      if (waitAttempts === 1) {
-        console.log(`   Available campaigns (first 10):`);
+      if (waitAttempts === 1 && dropdownItems.length > 0) {
+        console.log(`   Available results:`);
         dropdownItems.slice(0, 10).forEach((item, idx) => {
           const text = item.textContent.trim();
           console.log(`     ${idx}: "${text}"`);
@@ -951,15 +939,15 @@ async function selectCampaign(campaignName) {
     }
     
     if (!foundMatch) {
-      console.error(`   ❌ Campaign "${campaignName}" not found in dropdown after ${waitAttempts} attempts`);
+      console.error(`   ❌ Campaign "${campaignName}" not found after typing and filtering`);
       if (dropdownItems.length > 0) {
-        console.log(`   Available campaigns (first 20):`);
+        console.log(`   Filtered results (first 20):`);
         dropdownItems.slice(0, 20).forEach((item, idx) => {
           const text = item.textContent.trim();
           console.log(`     ${idx}: "${text}"`);
         });
       }
-      throw new Error(`Campaign "${campaignName}" not found in dropdown`);
+      throw new Error(`Campaign "${campaignName}" not found in filtered dropdown results`);
     }
     
     console.log('Step 6: Clicking matched campaign item...');
