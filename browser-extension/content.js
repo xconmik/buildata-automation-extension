@@ -549,103 +549,69 @@ async function selectCampaign(campaignName) {
     console.log('Step 5: Waiting for dropdown to show filtered results...');
     await sleep(1500); // Wait for dropdown to filter
     
-    console.log('Step 6: Looking for dropdown menu container...');
+    console.log('Step 6: Looking for dropdown items with class "dropdown-item"...');
     
-    // Try multiple selectors to find the dropdown menu
-    let dropdownMenu = document.querySelector('.dropdown-menu') ||
-                       document.querySelector('[role="listbox"]') ||
-                       document.querySelector('[role="menu"]') ||
-                       document.querySelector('.show.dropdown-menu') ||
-                       document.querySelector('.dropdown-menu.show');
+    // Look for dropdown items - they are div elements with class "dropdown-item"
+    let dropdownItems = document.querySelectorAll('div.dropdown-item');
+    console.log(`   Found ${dropdownItems.length} dropdown-item elements`);
     
-    console.log('   Trying selectors:', {
-      dropdownMenu: !!dropdownMenu,
-      show: !!document.querySelector('.show.dropdown-menu'),
-      dropdown: !!document.querySelector('.dropdown-menu'),
-      listbox: !!document.querySelector('[role="listbox"]'),
-      menu: !!document.querySelector('[role="menu"]')
-    });
-    
-    // If still not found, click the button again to make sure dropdown is open
-    if (!dropdownMenu) {
-      console.log('   ⚠️ Dropdown menu not visible, clicking button again...');
-      const campaignGroup = Array.from(document.querySelectorAll('div.form-group')).find(group => {
-        const label = group.querySelector('label');
-        return label && label.textContent.toLowerCase().includes('campaign');
-      });
+    // If we found items, click the first one
+    if (dropdownItems.length > 0) {
+      const firstItem = dropdownItems[0];
+      const itemText = firstItem.textContent.trim();
+      console.log(`   ✓ First item: "${itemText}"`);
+      console.log('Step 7: Clicking first dropdown item...');
       
-      if (campaignGroup) {
-        const btn = campaignGroup.querySelector('button');
-        if (btn) {
-          btn.click();
-          console.log('   Clicked button, waiting 1000ms...');
-          await sleep(1000);
+      // Make sure item is clickable
+      firstItem.style.cursor = 'pointer';
+      firstItem.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+      await sleep(200);
+      
+      // Click it
+      firstItem.click();
+      console.log(`   ✓ Clicked: "${itemText}"`);
+      await sleep(1500);
+      
+      console.log('Step 8: Waiting for form to update after selection...');
+      await sleep(1500);
+    } else {
+      // If no dropdown-item found, try other selectors
+      console.warn('   ⚠️ No div.dropdown-item found, trying alternative selectors...');
+      
+      const alternatives = [
+        { selector: '[class*="dropdown"]', name: 'class*=dropdown' },
+        { selector: '[role="option"]', name: 'role=option' },
+        { selector: '[role="menuitem"]', name: 'role=menuitem' },
+        { selector: 'button', name: 'button' },
+        { selector: 'a', name: 'a' }
+      ];
+      
+      let found = false;
+      for (const alt of alternatives) {
+        const items = document.querySelectorAll(alt.selector);
+        if (items.length > 0) {
+          console.log(`   Found ${items.length} items with selector "${alt.name}"`);
           
-          // Try finding dropdown again
-          dropdownMenu = document.querySelector('.dropdown-menu') ||
-                        document.querySelector('[role="listbox"]') ||
-                        document.querySelector('[role="menu"]') ||
-                        document.querySelector('.show.dropdown-menu');
+          // Find first item with text
+          for (const item of items) {
+            const text = item.textContent.trim();
+            if (text.length > 0 && text.length < 200) {
+              console.log(`   Trying to click: "${text.substring(0, 60)}..."`);
+              item.click();
+              await sleep(1500);
+              found = true;
+              break;
+            }
+          }
+          
+          if (found) break;
         }
       }
-    }
-    
-    if (!dropdownMenu) {
-      console.error('   ❌ Dropdown menu still not found');
-      console.log('   Visible elements check:');
-      const menus = document.querySelectorAll('[class*="dropdown"], [role*="list"], [role*="menu"]');
-      console.log(`   Found ${menus.length} potential menu containers`);
-      menus.forEach((m, idx) => {
-        const style = window.getComputedStyle(m);
-        console.log(`   Menu ${idx}: display=${style.display}, visibility=${style.visibility}, classes=${m.className}`);
-      });
-      throw new Error('Dropdown menu not found');
-    }
-    
-    console.log('   ✓ Found dropdown menu');
-    
-    console.log('Step 7: Clicking first item in dropdown...');
-    
-    // Get all clickable items from the dropdown
-    const items = dropdownMenu.querySelectorAll('button, a, li, div[role="option"], [role="menuitem"]');
-    console.log(`   Found ${items.length} potential items in dropdown`);
-    
-    let itemClicked = false;
-    
-    // Find first item that has text content
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      const text = item.textContent.trim();
       
-      // Skip items that are too short or are the search box
-      if (text.length > 2 && text.length < 200 && !item.classList.contains('form-control')) {
-        console.log(`   ✓ Found first clickable item: "${text.substring(0, 70)}..."`);
-        console.log('   Clicking it now...');
-        
-        // Make sure item is visible and clickable
-        item.scrollIntoView({ behavior: 'auto', block: 'nearest' });
-        await sleep(200);
-        
-        item.click();
-        itemClicked = true;
-        console.log('   ✓ Item clicked');
-        await sleep(1000);
-        break;
+      if (!found) {
+        throw new Error('No clickable dropdown items found');
       }
     }
-    
-    if (!itemClicked) {
-      console.error('   ❌ Could not find any clickable items in dropdown');
-      console.log('   All items in dropdown:');
-      items.forEach((item, idx) => {
-        const text = item.textContent.trim();
-        console.log(`     Item ${idx}: "${text.substring(0, 60)}..." (length: ${text.length})`);
-      });
-      throw new Error('No clickable items found in dropdown');
-    }
-    
-    console.log('Step 8: Waiting for form to update after selection...');
-    await sleep(2000);
     
     console.log('Step 9: Looking for Load Specifications button...');
     const allButtons = Array.from(document.querySelectorAll('button'));
