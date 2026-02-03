@@ -469,6 +469,17 @@ async function selectCampaign(campaignName) {
     await sleep(2500);
     
     console.log('Step 3: Looking for search input...');
+    await sleep(500); // Give dropdown time to render
+    
+    // Debug: Show all inputs on page
+    const allInputs = document.querySelectorAll('input');
+    console.log(`   Found ${allInputs.length} total input elements on page`);
+    allInputs.forEach((inp, idx) => {
+      if (idx < 10) { // Only log first 10
+        console.log(`   Input ${idx}: type="${inp.type}", class="${inp.className}", placeholder="${inp.placeholder}"`);
+      }
+    });
+    
     // Find and focus search input with multiple fallback selectors
     let searchInput = document.querySelector('.virtualized input.form-control[placeholder="Search..."]') ||
           document.querySelector('.input-group input.form-control[placeholder*="Search"]') ||
