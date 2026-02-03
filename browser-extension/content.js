@@ -486,8 +486,33 @@ async function selectCampaign(campaignName) {
       searchInput.dispatchEvent(new Event('input', { bubbles: true }));
       console.log('   ✓ Dispatched input event');
       
-      console.log('   Waiting 2500ms for dropdown to filter...');
-      await sleep(2500);
+      console.log('   Waiting for dropdown to filter to show matching campaigns...');
+      // Wait until dropdown filters to show only matching items
+      let foundMatchingItems = false;
+      let waitAttempts = 0;
+      const maxAttempts = 15;
+      
+      while (!foundMatchingItems && waitAttempts < maxAttempts) {
+        await sleep(300);
+        waitAttempts++;
+        
+        const tempItems = Array.from(document.querySelectorAll('div.dropdown-item'));
+        const matchingItems = tempItems.filter(item => 
+          item.textContent.toLowerCase().includes(campaignName.toLowerCase())
+        );
+        
+        if (matchingItems.length > 0) {
+          console.log(`   ✓ Found ${matchingItems.length} matching item(s) for "${campaignName}" (attempt ${waitAttempts})`);
+          console.log(`   Total items in dropdown: ${tempItems.length}`);
+          foundMatchingItems = true;
+        } else {
+          console.log(`   ⏳ Waiting... ${tempItems.length} total items, 0 matching (attempt ${waitAttempts}/${maxAttempts})`);
+        }
+      }
+      
+      if (!foundMatchingItems) {
+        console.warn(`   ⚠️ Timeout waiting for filtered items after ${maxAttempts} attempts`);
+      }
     } else {
       console.warn('   ⚠️ Search input not found. Trying to select from dropdown list directly.');
       await sleep(1000);
