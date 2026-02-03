@@ -117,7 +117,29 @@ async function scrapeZoomInfo() {
       if (label.textContent.includes('Headquarters')) {
         const contentSpan = label.parentElement.querySelector('span.content');
         if (contentSpan) {
-          data.headquarters = contentSpan.textContent.trim();
+          // Try multiple methods to get full text (avoid truncation)
+          let hqText = contentSpan.title || // Try title attribute first
+                       contentSpan.getAttribute('data-text') ||
+                       contentSpan.innerText || // innerText sometimes has full content
+                       contentSpan.textContent.trim();
+          
+          // Clean up the text
+          hqText = hqText.trim();
+          
+          // If we got truncated text with "...", try to expand it
+          if (hqText.includes('...')) {
+            // Try getting text from parent or nearby elements
+            const parent = contentSpan.parentElement;
+            if (parent && parent.title) {
+              hqText = parent.title;
+            }
+            // If still truncated, log it for debugging
+            if (hqText.includes('...')) {
+              console.log('⚠️ Headquarters text appears truncated:', hqText);
+            }
+          }
+          
+          data.headquarters = hqText;
           console.log('✓ Found HQ:', data.headquarters);
           break;
         }

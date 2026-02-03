@@ -90,7 +90,12 @@ async function fillBuildataForm(data) {
   
   if (scrapedHeadquarters) {
     console.log('Parsing headquarters dynamically:', scrapedHeadquarters);
-    const parts = scrapedHeadquarters.split(',').map(p => p.trim()).filter(p => p.length > 0);
+    
+    // Remove trailing "..." if present (truncation indicator from ZoomInfo)
+    let hqClean = scrapedHeadquarters.replace(/\.\.\.$/, '').trim();
+    console.log('Cleaned headquarters:', hqClean);
+    
+    const parts = hqClean.split(',').map(p => p.trim()).filter(p => p.length > 0);
     
     console.log('Parts found:', parts, 'Count:', parts.length);
     
@@ -194,13 +199,17 @@ async function fillBuildataForm(data) {
         /\b\d{4,6}\b/,                              // Default: 4-6 digit sequence
       ];
       
-      for (const pattern of fallbackPatterns) {
-        const zipMatch = scrapedHeadquarters.match(pattern);
-        if (zipMatch) {
-          scrapedZipCode = zipMatch[0];
-          console.log('Fallback zip extraction matched:', scrapedZipCode);
-          break;
+      // Try patterns on both original and cleaned versions
+      for (const source of [hqClean, scrapedHeadquarters]) {
+        for (const pattern of fallbackPatterns) {
+          const zipMatch = source.match(pattern);
+          if (zipMatch) {
+            scrapedZipCode = zipMatch[0];
+            console.log('Fallback zip extraction matched:', scrapedZipCode, 'from:', source);
+            break;
+          }
         }
+        if (scrapedZipCode) break;
       }
     }
     
