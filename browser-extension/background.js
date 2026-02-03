@@ -27,6 +27,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
+  if (message.action === 'searchZipCode') {
+    searchZipCodeGoogle(message.street, message.city, message.state).then(zipCode => {
+      sendResponse({ zipCode });
+    }).catch(error => {
+      sendResponse({ zipCode: '' });
+    });
+    return true;
+  }
+  
   if (message.action === 'fillBuildataForm') {
     // Find the Buildata tab specifically, not just the active tab
     chrome.tabs.query({url: '*://buildata.pharosiq.com/*'}, async (tabs) => {
@@ -217,4 +226,54 @@ async function scrapeDataForLead(domain) {
   }
   
   return scrapedData;
+}
+
+// Search Google for zip code dynamically
+async function searchZipCodeGoogle(street, city, state) {
+  try {
+    const searchQuery = `${street} ${city} ${state} what is the zip code`;
+    const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
+    
+    console.log('Searching for zip code:', searchQuery);
+    
+    // Create a new tab for searching
+    const searchTab = await new Promise((resolve, reject) => {
+      chrome.tabs.create({ url: googleSearchUrl, active: false }, (tab) => {
+        if (tab) resolve(tab);
+        else reject(new Error('Could not create search tab'));
+      });
+    });
+    
+    // Wait for page to load
+    await sleep(2000);
+    
+    let zipCode = '';
+    
+    // Scrape the search results
+    try {
+      const result = await chrome.tabs.sendMessage(searchTab.id, { action: 'extractZipFromGoogle' });
+      zipCode = result.zipCode || '';
+    } catch (e) {
+      // Fallback: try to extract from HTML content
+      const tabContent = await chrome.tabs.executeScript({
+        tabId: searchTab.id,
+        code: `
+          const searchResult = document.body.innerText;
+          const zipMatch = searchResult.match(/(?:Postal Code|ZIP|Zip Code)[:\\s]+([0-9\\-A-Z]{3,10})/i);
+          zipMatch ? zipMatch[1].trim() : '';
+        `
+      });
+      zipCode = tabContent?.[0] || '';
+    }
+    
+    // Close search tab
+    chrome.tabs.remove(searchTab.id);
+    
+    console.log('Found zip code from Google:', zipCode);
+    return zipCode;
+    
+  } catch (error) {
+    console.error('Error searching for zip code:', error);
+    return '';
+  }
 }

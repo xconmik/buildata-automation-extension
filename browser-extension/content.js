@@ -96,8 +96,8 @@ async function fillBuildataForm(data) {
       scrapedStreetAddress = parts[0];
       scrapedCity = parts[1];
       scrapedState = parts[2];
-      // Extract zip code (usually digits)
-      scrapedZipCode = parts[3].match(/\d+/)?.[0] || '';
+      // Extract zip code dynamically - works for all countries
+      scrapedZipCode = extractDynamicZipCode(parts.slice(3).join(', '));
     } else if (parts.length === 3) {
       // Format: Street, City, State
       scrapedStreetAddress = parts[0];
@@ -106,6 +106,35 @@ async function fillBuildataForm(data) {
     }
     
     console.log('Parsed address from headquarters:', { scrapedStreetAddress, scrapedCity, scrapedState, scrapedZipCode });
+  }
+  
+  // Helper function to extract postal code dynamically for any country
+  function extractDynamicZipCode(addressPart) {
+    if (!addressPart) return '';
+    
+    // Remove country names if present
+    let cleaned = addressPart.replace(/(USA|United States|Germany|France|UK|United Kingdom|Canada|Australia|Japan|China|India|Brazil|Mexico|Spain|Italy|Netherlands|etc\.?)/gi, '').trim();
+    
+    // Try multiple postal code patterns for different countries
+    const patterns = [
+      /\b(\d{5}(?:-\d{4})?)\b/,           // USA: 12345 or 12345-6789
+      /\b([A-Z]\d[A-Z]\s?\d[A-Z]\d)\b/,   // Canada: A1A 1A1
+      /\b([A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2})\b/, // UK: SW1A 1AA
+      /\b(\d{5})\b/,                       // Germany, Spain, etc: 5 digits
+      /\b(\d{4})\b/,                       // Netherlands, many EU countries: 4 digits
+      /\b([A-Z0-9\s-]{3,8})\b/            // Generic alphanumeric codes
+    ];
+    
+    for (let pattern of patterns) {
+      const match = cleaned.match(pattern);
+      if (match) {
+        return match[1].trim();
+      }
+    }
+    
+    // Fallback: extract first sequence of digits/letters that looks like postal code
+    const fallback = cleaned.match(/[\d\s\-A-Z]{3,10}/);
+    return fallback ? fallback[0].trim() : '';
   }
   
   // Convert ZoomInfo employee count to Buildata dropdown value
@@ -409,7 +438,8 @@ async function fillBuildataForm(data) {
     console.warn(`❌ State input not found`);
   }
   
-  // Zip Code
+  
+  // Zip Code - with dynamic Google search backup
   let zipInput = document.querySelector('input#zip');
   if (!zipInput) {
     const inputs = Array.from(document.querySelectorAll('input[type="text"]'));
@@ -420,7 +450,31 @@ async function fillBuildataForm(data) {
     if (parent) zipInput = parent;
   }
   if (zipInput) {
-    const zipValue = scrapedZipCode || data.Zip || data.zipCode || data.zip || '';
+    let zipValue = scrapedZipCode || data.Zip || data.zipCode || data.zip || '';
+    
+    // If no zip code found locally, search Google dynamically
+    if (!zipValue && scrapedStreetAddress && scrapedCity && scrapedState) {
+      console.log('No zip code found locally, searching Google...');
+      try {
+        const result = await new Promise((resolve) => {
+          chrome.runtime.sendMessage({
+            action: 'searchZipCode',
+            street: scrapedStreetAddress,
+            city: scrapedCity,
+            state: scrapedState
+          }, (response) => {
+            resolve(response.zipCode || '');
+          });
+        });
+        if (result) {
+          zipValue = result;
+          console.log('✓ Found zip code from Google:', zipValue);
+        }
+      } catch (e) {
+        console.log('Google zip search failed:', e);
+      }
+    }
+    
     if (zipValue) {
       zipInput.value = zipValue;
       zipInput.dispatchEvent(new Event('input', { bubbles: true }));
