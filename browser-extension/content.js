@@ -528,16 +528,24 @@ async function selectCampaign(campaignName) {
     await sleep(2500);
     
     console.log('Step 3: Looking for search input...');
+    // Find dropdown panel (portal/overlay aware)
+    const dropdownPanel = document.querySelector(
+      '.dropdown-menu.show, .dropdown-menu[style*="display"], [role="listbox"], .ng-dropdown-panel, .cdk-overlay-pane, .select2-container--open, .virtualized'
+    );
+    
     // Find and focus search input with multiple fallback selectors
-    let searchInput = document.querySelector('.virtualized input.form-control[placeholder="Search..."]') ||
-          document.querySelector('.input-group input.form-control[placeholder*="Search"]') ||
-          document.querySelector('input.form-control[placeholder="Search..."]') ||
-          document.querySelector('input[placeholder*="Search"]') ||
-          document.querySelector('.dropdown-menu input.form-control') ||
-          document.querySelector('input[type="search"]') ||
-          document.querySelector('input[aria-label*="Search"]') ||
-          document.querySelector('input[role="combobox"]') ||
-          document.querySelector('input[type="text"].form-control');
+    let searchInput = (dropdownPanel && dropdownPanel.querySelector(
+      'input.form-control[placeholder="Search..."], input[placeholder*="Search"], input[type="search"], input[aria-label*="Search"], input[role="combobox"], .select2-search__field, .ng-select input'
+    )) ||
+    document.querySelector('.virtualized input.form-control[placeholder="Search..."]') ||
+    document.querySelector('.input-group input.form-control[placeholder*="Search"]') ||
+    document.querySelector('input.form-control[placeholder="Search..."]') ||
+    document.querySelector('input[placeholder*="Search"]') ||
+    document.querySelector('.dropdown-menu input.form-control') ||
+    document.querySelector('input[type="search"]') ||
+    document.querySelector('input[aria-label*="Search"]') ||
+    document.querySelector('input[role="combobox"]') ||
+    document.querySelector('input[type="text"].form-control');
     
     if (searchInput) {
       console.log('   ✓ Found search input');
@@ -613,11 +621,23 @@ async function selectCampaign(campaignName) {
         console.log('   Note: Campaign ID "' + campaignName + '" may not exist in dropdown, or dropdown filtering is not responding');
       }
     } else {
-      console.warn('   ⚠️ Search input not found. Trying to select from dropdown list directly.');
+      console.warn('   ⚠️ Search input not found. Trying to open dropdown with keyboard and select from list directly.');
+      campaignBtn.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
+      campaignBtn.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
       await sleep(1000);
     }
     
     console.log('Step 5: Waiting for dropdown items to appear with typed campaign name...');
+    
+    const getDropdownItems = () => {
+      const panel = document.querySelector(
+        '.dropdown-menu.show, .dropdown-menu[style*="display"], [role="listbox"], .ng-dropdown-panel, .cdk-overlay-pane, .select2-container--open, .virtualized'
+      );
+      const scope = panel || document;
+      return Array.from(scope.querySelectorAll(
+        'div.dropdown-item, li.dropdown-item, [role="option"], .ng-option, .select2-results__option, .dropdown-menu a, .dropdown-menu button'
+      ));
+    };
     
     let dropdownItems = [];
     let foundMatch = null;
@@ -629,17 +649,12 @@ async function selectCampaign(campaignName) {
       await sleep(300);
       waitAttempts++;
       
-      const virtualizedContainers = Array.from(document.querySelectorAll('div.virtualized'));
-      if (virtualizedContainers.length > 0) {
-        dropdownItems = Array.from(virtualizedContainers[0].querySelectorAll('div.dropdown-item'));
-      } else {
-        dropdownItems = Array.from(document.querySelectorAll('div.dropdown-item'));
-      }
+      dropdownItems = getDropdownItems();
       
       if (dropdownItems.length === 0) {
         if (waitAttempts === 1 || waitAttempts % 5 === 0) {
           console.log(`   ⏳ Attempt ${waitAttempts}/${maxWaitAttempts}: No dropdown items yet...`);
-          console.log(`   Virtualized containers: ${virtualizedContainers.length}`);
+          console.log(`   Dropdown items found: ${dropdownItems.length}`);
         }
         continue;
       }
