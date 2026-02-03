@@ -547,19 +547,19 @@ async function selectCampaign(campaignName) {
     }
     
     console.log('Step 5: Looking for dropdown items...');
-    console.log(`   Waiting for dropdown to filter to ONLY "${campaignName}"...`);
+    console.log(`   Waiting for dropdown to show "${campaignName}"...`);
     
     let itemsToClick = [];
-    let filterComplete = false;
+    let foundExactMatch = false;
     let waitAttempts = 0;
-    const maxWaitAttempts = 30; // Wait up to 9 seconds
+    const maxWaitAttempts = 20; // Wait up to 6 seconds
     
-    // Keep waiting until we find EXACTLY the campaign we want
-    while (!filterComplete && waitAttempts < maxWaitAttempts) {
+    // Keep waiting until we find the campaign we want
+    while (!foundExactMatch && waitAttempts < maxWaitAttempts) {
       await sleep(300);
       waitAttempts++;
       
-      // Look ONLY in dropdown menu areas
+      // Look in dropdown menu areas
       const dropdownMenus = Array.from(document.querySelectorAll('.dropdown-menu, [role="listbox"]'));
       
       if (dropdownMenus.length === 0) {
@@ -570,11 +570,11 @@ async function selectCampaign(campaignName) {
       // Get items from dropdowns
       itemsToClick = [];
       dropdownMenus.forEach(menu => {
-        const items = menu.querySelectorAll('div, li, a, button, [role="option"]');
+        const items = menu.querySelectorAll('*');
         items.forEach(item => {
           const text = item.textContent.trim();
-          // Only add items that look like campaign items (not too long)
-          if (text && text.length < 100 && text.length > 2) {
+          // Only add items that look like campaign items
+          if (text && text.length > 2 && text.length < 200) {
             itemsToClick.push(item);
           }
         });
@@ -587,60 +587,57 @@ async function selectCampaign(campaignName) {
       
       console.log(`   ⏳ Attempt ${waitAttempts}: Found ${itemsToClick.length} items in dropdown`);
       
-      // Check if we found exact match
-      const exactMatch = itemsToClick.find(item => 
+      // Check for exact match with just the campaign ID
+      const exactIdMatch = itemsToClick.find(item => 
         item.textContent.trim() === campaignName
       );
       
-      if (exactMatch) {
-        console.log(`   ✓✓✓ FOUND EXACT MATCH: "${campaignName}"`);
-        filterComplete = true;
+      // Check for match starting with campaign ID (e.g., "404677 - Campaign Name")
+      const startMatch = itemsToClick.find(item => 
+        item.textContent.trim().startsWith(campaignName)
+      );
+      
+      const foundMatch = exactIdMatch || startMatch;
+      
+      if (foundMatch) {
+        console.log(`   ✓✓✓ FOUND "${campaignName}": "${foundMatch.textContent.trim().substring(0, 70)}..."`);
+        foundExactMatch = true;
         break;
       }
       
-      // Check if there's only 1 item (filtered down to just our campaign)
-      if (itemsToClick.length === 1) {
-        const singleItem = itemsToClick[0].textContent.trim();
-        console.log(`   ✓ Dropdown filtered to 1 item: "${singleItem}"`);
-        if (singleItem.includes(campaignName)) {
-          console.log(`   ✓✓✓ Item contains campaign ID "${campaignName}"`);
-          filterComplete = true;
-          break;
-        }
-      }
-      
       // Log progress every 5 attempts
-      if (waitAttempts % 5 === 0) {
-        console.log(`   Items found so far:`);
+      if (waitAttempts % 5 === 0 || waitAttempts === 1) {
+        console.log(`   First few items:`);
         itemsToClick.slice(0, 5).forEach((item, idx) => {
-          console.log(`     ${idx}: "${item.textContent.trim().substring(0, 50)}..."`);
+          console.log(`     ${idx}: "${item.textContent.trim().substring(0, 60)}..."`);
         });
       }
     }
     
-    if (!filterComplete) {
-      console.warn(`   ⚠️ Timeout after ${maxWaitAttempts} attempts (${maxWaitAttempts * 300}ms)`);
-      console.warn(`   Campaign ID "${campaignName}" not found in filtered results`);
-      console.warn(`   Last dropdown items: ${itemsToClick.length} items found`);
-      itemsToClick.slice(0, 10).forEach((item, idx) => {
-        console.log(`     Item ${idx}: "${item.textContent.trim().substring(0, 50)}..."`);
+    if (!foundExactMatch) {
+      console.warn(`   ⚠️ Timeout after ${waitAttempts} attempts`);
+      console.warn(`   Campaign "${campaignName}" not found in dropdown items`);
+      console.log(`   Available items (`);
+      itemsToClick.slice(0, 15).forEach((item, idx) => {
+        console.log(`     ${idx}: "${item.textContent.trim().substring(0, 60)}..."`);
       });
+      throw new Error(`Campaign "${campaignName}" not found in dropdown`);
     }
     
     if (!itemsToClick.length) {
-      console.error('   ❌ FAILED: No dropdown items found at all');
+      console.error('   ❌ FAILED: No dropdown items found');
       throw new Error('No dropdown items found');
     }
     
-    // Select the item
+    // Find and click the matching item
     const matchItem = itemsToClick.find(item => 
       item.textContent.trim() === campaignName
     ) || itemsToClick.find(item => 
-      item.textContent.trim().includes(campaignName)
-    ) || itemsToClick[0];
+      item.textContent.trim().startsWith(campaignName)
+    );
     
     const itemText = matchItem.textContent.trim();
-    console.log(`   ✓ Final selection: "${itemText.substring(0, 50)}..."`);
+    console.log(`   ✓ Selected item: "${itemText.substring(0, 70)}..."`);
     
     console.log('Step 6: Clicking dropdown item...');
     await sleep(500);
