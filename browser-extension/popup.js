@@ -184,30 +184,16 @@ async function processNextLead() {
   const lead = leads[currentIndex];
   updateProgress();
   
-  // STEP 1: Check if domain exists in CSV (check multiple possible column names)
-  let domain = lead['Domain or Website'] || lead['domain'] || lead['website'] || lead['Domain'] || lead['Website'] || '';
-  domain = domain.trim();
+  const domain = lead['Domain or Website'] || lead.domain || '';
+  const company = lead.Company || lead.company || '';
   
-  const company = lead.Company || lead.company || lead['Company Name'] || '';
-  
-  // Validate domain exists
-  if (!domain) {
-    showStatus(`No domain/website found for ${company || 'lead'}. Skipping...`, 'error');
-    logLeadResult(lead, 'ERROR', 'No domain or website in CSV');
-    currentIndex++;
-    if (isRunning && currentIndex < leads.length) {
-      setTimeout(() => processNextLead(), 1000);
-    }
-    return;
-  }
-  
-  // STEP 2: Search domain + zoominfo (main company page)
-  showStatus(`Searching ZoomInfo for ${company || domain}...`, 'info');
+  // Step 1: Scrape ZoomInfo
+  showStatus(`Scraping ZoomInfo for ${company || domain}...`, 'info');
   const zoomData = await scrapeZoomInfo(domain);
   await sleep(2000);
   
-  // STEP 3: Search domain + zoominfo employee (employee directory page)
-  showStatus(`Searching ZoomInfo Employee Directory for ${company || domain}...`, 'info');
+  // Step 1.5: Scrape ZoomInfo Employee Directory (address, employee count)
+  showStatus(`Scraping ZoomInfo Employee Directory for ${company || domain}...`, 'info');
   const zoomEmpData = await scrapeZoomInfoEmployeeDirectory(domain);
   await sleep(2000);
   
