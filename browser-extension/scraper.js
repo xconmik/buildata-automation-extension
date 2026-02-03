@@ -258,8 +258,4 @@ async function scrapeZoomInfoEmployeeDirectory() {
   
   console.log('ZoomInfo employee directory data:', data);
   return data;
-
-  }
-  
-  return data;
 }
