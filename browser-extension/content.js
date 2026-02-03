@@ -498,31 +498,39 @@ async function selectCampaign(campaignName) {
       console.log('Step 4: Setting campaign value...');
       searchInput.focus();
       console.log('   ✓ Focused input');
-      await sleep(1000);
+      await sleep(1500);
       
-      // Set value directly in one operation
-      console.log(`   Setting value to: "${campaignName}"`);
-      searchInput.value = campaignName;
-      console.log(`   Current value after set: "${searchInput.value}"`);
-      
-      // Fire keyboard events that actually trigger filtering
-      console.log('   Firing keyboard events to trigger filter...');
+      // Type character by character with delays to trigger live filtering
+      console.log(`   Typing campaign value: "${campaignName}"`);
       for (let i = 0; i < campaignName.length; i++) {
+        const char = campaignName[i];
+        console.log(`   Typing char ${i + 1}/${campaignName.length}: "${char}"`);
+        
+        // Add character to input
+        searchInput.value += char;
+        
+        // Fire keyboard events
         searchInput.dispatchEvent(new KeyboardEvent('keydown', { 
-          key: campaignName[i], 
-          code: `Key${campaignName[i].toUpperCase()}`,
-          bubbles: true 
+          key: char, 
+          code: isNaN(char) ? `Key${char.toUpperCase()}` : `Digit${char}`,
+          bubbles: true,
+          cancelable: true
         }));
+        
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        
         searchInput.dispatchEvent(new KeyboardEvent('keyup', { 
-          key: campaignName[i], 
-          code: `Key${campaignName[i].toUpperCase()}`,
-          bubbles: true 
+          key: char, 
+          code: isNaN(char) ? `Key${char.toUpperCase()}` : `Digit${char}`,
+          bubbles: true,
+          cancelable: true
         }));
+        
+        console.log(`   Current input value: "${searchInput.value}"`);
+        
+        // Slow down typing - 500ms per character
+        await sleep(500);
       }
-      
-      // Also fire input event
-      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-      console.log('   ✓ Dispatched keyboard and input events');
       
       console.log('   Waiting for dropdown to filter to show matching campaigns...');
       // Wait until dropdown filters to show only matching items
@@ -574,7 +582,7 @@ async function selectCampaign(campaignName) {
     let dropdownItems = [];
     let foundMatch = null;
     let waitAttempts = 0;
-    const maxWaitAttempts = 30; // Wait up to 9 seconds
+    const maxWaitAttempts = 50; // Wait up to 15 seconds
     
     // Keep checking until we find a dropdown item matching the campaign name we typed
     while (!foundMatch && waitAttempts < maxWaitAttempts) {
