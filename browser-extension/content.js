@@ -128,21 +128,20 @@ async function fillBuildataForm(data) {
       if (parts.length >= 4) scrapedZipCode = parts[3];
     }
     
+    // Fallback: if zip still missing, extract any 4-6 digit sequence
+    if (!scrapedZipCode) {
+      const zipMatch = scrapedHeadquarters.match(/\b\d{4,6}\b/);
+      if (zipMatch) {
+        scrapedZipCode = zipMatch[0];
+      }
+    }
+    
     console.log('Parsed address components dynamically:', {
       street: scrapedStreetAddress,
       city: scrapedCity,
       state: scrapedState,
       zip: scrapedZipCode
     });
-  }
-
-  // Final fallback: extract zip directly from headquarters string
-  if (!scrapedZipCode && scrapedHeadquarters) {
-    const zipMatch = scrapedHeadquarters.match(/\b\d{4,6}\b/);
-    if (zipMatch) {
-      scrapedZipCode = zipMatch[0];
-      console.log('✓ Extracted zip from headquarters:', scrapedZipCode);
-    }
   }
   
   // Prefer employee directory address fields if provided
