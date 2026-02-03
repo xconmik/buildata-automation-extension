@@ -634,28 +634,77 @@ async function selectCampaign(campaignName) {
     }
     
     console.log('Step 2: Clicking campaign button to open dropdown...');
+    
+    // Debug: log button details
+    console.log('   Button details:', {
+      tagName: campaignBtn.tagName,
+      className: campaignBtn.className,
+      type: campaignBtn.type,
+      disabled: campaignBtn.disabled,
+      visible: campaignBtn.offsetParent !== null
+    });
+    
+    // Try multiple click methods for Blazor components
+    campaignBtn.focus();
+    console.log('   ✓ Button focused');
+    await sleep(300);
+    
+    // Method 1: Standard click
     campaignBtn.click();
-    console.log('   ✓ Button clicked, waiting for dropdown to render...');
-    await sleep(1500);
+    console.log('   ✓ Standard click executed');
+    await sleep(1000);
+    
+    // Method 2: Try keyboard Enter if standard click didn't work
+    if (!document.querySelector('.dropdown-menu.show, [role="listbox"], .ng-dropdown-panel, .cdk-overlay-pane')) {
+      console.log('   ⚠️ Standard click didn\'t open dropdown, trying keyboard Enter...');
+      campaignBtn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+      campaignBtn.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true }));
+      await sleep(1000);
+    }
+    
+    // Method 3: Try ArrowDown if still not open
+    if (!document.querySelector('.dropdown-menu.show, [role="listbox"], .ng-dropdown-panel, .cdk-overlay-pane')) {
+      console.log('   ⚠️ Keyboard Enter didn\'t work, trying ArrowDown...');
+      campaignBtn.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
+      await sleep(1000);
+    }
+    
+    console.log('   ✓ Waiting for dropdown to render...');
     
     // Enhanced panel detection with more wait attempts
     const waitForDropdownPanel = async (maxWait = 20) => {
+      const selectors = [
+        '.dropdown-menu.show',
+        '.dropdown-menu[style*="display"]',
+        '[role="listbox"]',
+        '.ng-dropdown-panel',
+        '.cdk-overlay-pane',
+        '.select2-container--open',
+        '.virtualized',
+        '[class*="dropdown"][class*="show"]',
+        '[class*="dropdown"][style*="display"]'
+      ];
+      
       for (let i = 0; i < maxWait; i++) {
-        const panel = document.querySelector(
-          '.dropdown-menu.show, .dropdown-menu[style*="display"], [role="listbox"], .ng-dropdown-panel, .cdk-overlay-pane, .select2-container--open, .virtualized'
-        );
-        if (panel) {
-          console.log(`   ✓ Dropdown panel detected at attempt ${i + 1}`);
-          return true;
+        for (const selector of selectors) {
+          const panel = document.querySelector(selector);
+          if (panel && panel.offsetHeight > 0) {
+            console.log(`   ✓ Dropdown panel detected (${selector}) at attempt ${i + 1}`);
+            return panel;
+          }
         }
-        if (i % 5 === 0) console.log(`   ⏳ Waiting for panel... (attempt ${i + 1}/${maxWait})`);
+        if (i % 5 === 0 && i > 0) console.log(`   ⏳ Waiting for panel... (attempt ${i + 1}/${maxWait})`);
         await sleep(250);
       }
-      return false;
+      
+      // Debug: check if any panels exist but are hidden
+      const allPanels = document.querySelectorAll('[class*="dropdown"], [role="listbox"], .overlay, [class*="popup"]');
+      console.log(`   ℹ️ Found ${allPanels.length} potential panel elements (but none are visible)`);
+      return null;
     };
     
-    const panelReady = await waitForDropdownPanel();
-    if (!panelReady) {
+    const panelElement = await waitForDropdownPanel();
+    if (!panelElement) {
       console.warn('   ⚠️ Dropdown panel not detected after 20 attempts; trying secondary click...');
       campaignBtn.click();
       await sleep(1000);
@@ -709,13 +758,43 @@ async function selectCampaign(campaignName) {
     console.log('Step 5: Waiting for dropdown items to appear...');
     
     const getDropdownItems = () => {
-      const panel = document.querySelector(
-        '.dropdown-menu.show, .dropdown-menu[style*="display"], [role="listbox"], .ng-dropdown-panel, .cdk-overlay-pane, .select2-container--open, .virtualized'
-      );
-      const scope = panel || document;
-      return Array.from(scope.querySelectorAll(
-        'div.dropdown-item, li.dropdown-item, [role="option"], .ng-option, .select2-results__option, .dropdown-menu a, .dropdown-menu button'
-      )).filter(item => item.textContent.trim().length > 0);
+      // Try all possible dropdown item selectors
+      const selectors = [
+        'div.dropdown-item',
+        'li.dropdown-item',
+        '[role="option"]',
+        '.ng-option',
+        '.select2-results__option',
+        '.dropdown-menu a',
+        '.dropdown-menu button',
+        '[class*="dropdown-item"]',
+        '[class*="menu-item"]',
+        '[class*="option"]'
+      ];
+      
+      let items = [];
+      for (const selector of selectors) {
+        items = Array.from(document.querySelectorAll(selector)).filter(item => {
+          return item.textContent.trim().length > 0 && item.offsetHeight > 0;
+        });
+        if (items.length > 0) {
+          console.log(`   ℹ️ Found ${items.length} dropdown items using selector: ${selector}`);
+          return items;
+        }
+      }
+      
+      // Also check in body for portals
+      const body = document.body;
+      if (body) {
+        items = Array.from(body.querySelectorAll('[role="option"], .ng-option, .dropdown-item, [class*="option"][class*="visible"]'))
+          .filter(item => item.offsetHeight > 0 && item.textContent.trim().length > 0);
+        if (items.length > 0) {
+          console.log(`   ℹ️ Found ${items.length} dropdown items in portal elements`);
+          return items;
+        }
+      }
+      
+      return items;
     };
     
     let dropdownItems = [];
