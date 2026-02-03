@@ -546,81 +546,85 @@ async function selectCampaign(campaignName) {
       await sleep(1000);
     }
     
-    console.log('Step 5: Waiting for dropdown to show filtered results...');
-    await sleep(1500); // Wait for dropdown to filter
+    console.log('Step 5: Waiting for dropdown items to appear with typed campaign name...');
     
-    console.log('Step 6: Looking for dropdown items with class "dropdown-item"...');
+    let dropdownItems = [];
+    let foundMatch = null;
+    let waitAttempts = 0;
+    const maxWaitAttempts = 30; // Wait up to 9 seconds
     
-    // Look for dropdown items - they are div elements with class "dropdown-item"
-    let dropdownItems = document.querySelectorAll('div.dropdown-item');
-    console.log(`   Found ${dropdownItems.length} dropdown-item elements`);
-    
-    // If we found items, click the first one
-    if (dropdownItems.length > 0) {
-      const firstItem = dropdownItems[0];
-      const itemText = firstItem.textContent.trim();
-      console.log(`   ✓ First item: "${itemText}"`);
-      console.log('Step 7: Clicking first dropdown item...');
+    // Keep checking until we find a dropdown item matching the campaign name we typed
+    while (!foundMatch && waitAttempts < maxWaitAttempts) {
+      await sleep(300);
+      waitAttempts++;
       
-      // Make sure item is clickable
-      firstItem.style.cursor = 'pointer';
-      firstItem.scrollIntoView({ behavior: 'auto', block: 'nearest' });
-      await sleep(200);
+      // Look for all dropdown-item divs
+      dropdownItems = Array.from(document.querySelectorAll('div.dropdown-item'));
       
-      // Click it
-      firstItem.click();
-      console.log(`   ✓ Clicked: "${itemText}"`);
-      await sleep(1500);
-      
-      console.log('Step 8: Waiting for form to update after selection...');
-      await sleep(1500);
-    } else {
-      // If no dropdown-item found, try other selectors
-      console.warn('   ⚠️ No div.dropdown-item found, trying alternative selectors...');
-      
-      const alternatives = [
-        { selector: '[class*="dropdown"]', name: 'class*=dropdown' },
-        { selector: '[role="option"]', name: 'role=option' },
-        { selector: '[role="menuitem"]', name: 'role=menuitem' },
-        { selector: 'button', name: 'button' },
-        { selector: 'a', name: 'a' }
-      ];
-      
-      let found = false;
-      for (const alt of alternatives) {
-        const items = document.querySelectorAll(alt.selector);
-        if (items.length > 0) {
-          console.log(`   Found ${items.length} items with selector "${alt.name}"`);
-          
-          // Find first item with text
-          for (const item of items) {
-            const text = item.textContent.trim();
-            if (text.length > 0 && text.length < 200) {
-              console.log(`   Trying to click: "${text.substring(0, 60)}..."`);
-              item.click();
-              await sleep(1500);
-              found = true;
-              break;
-            }
-          }
-          
-          if (found) break;
+      if (dropdownItems.length === 0) {
+        if (waitAttempts === 1 || waitAttempts % 5 === 0) {
+          console.log(`   ⏳ Attempt ${waitAttempts}/${maxWaitAttempts}: No dropdown items yet...`);
         }
+        continue;
       }
       
-      if (!found) {
-        throw new Error('No clickable dropdown items found');
+      console.log(`   ✓ Attempt ${waitAttempts}: Found ${dropdownItems.length} dropdown items`);
+      
+      // Look for item matching the campaign name
+      foundMatch = dropdownItems.find(item => {
+        const itemText = item.textContent.trim();
+        const searchText = campaignName.trim();
+        return itemText === searchText || itemText.startsWith(searchText);
+      });
+      
+      if (foundMatch) {
+        console.log(`   ✓✓✓ FOUND MATCH: "${foundMatch.textContent.trim()}"`);
+        break;
+      } else {
+        // Show first few items for debugging
+        if (waitAttempts === 1 || waitAttempts % 5 === 0) {
+          console.log(`   Waiting for "${campaignName}" to appear... Items shown:`);
+          dropdownItems.slice(0, 3).forEach((item, idx) => {
+            console.log(`     ${idx}: "${item.textContent.trim()}"`);
+          });
+        }
       }
     }
     
-    console.log('Step 9: Looking for Load Specifications button...');
+    if (!foundMatch) {
+      console.error(`   ❌ Campaign "${campaignName}" not found in dropdown after ${waitAttempts} attempts`);
+      if (dropdownItems.length > 0) {
+        console.log(`   Available items in dropdown:`);
+        dropdownItems.slice(0, 10).forEach((item, idx) => {
+          console.log(`     ${idx}: "${item.textContent.trim()}"`);
+        });
+      }
+      throw new Error(`Campaign "${campaignName}" not found in dropdown`);
+    }
+    
+    console.log('Step 6: Clicking matched campaign item...');
+    
+    // Scroll into view and click
+    foundMatch.style.cursor = 'pointer';
+    foundMatch.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+    await sleep(200);
+    
+    const matchText = foundMatch.textContent.trim();
+    console.log(`   Clicking: "${matchText}"`);
+    foundMatch.click();
+    console.log(`   ✓ Clicked campaign item`);
+    
+    console.log('Step 7: Waiting for form to update after selection...');
+    await sleep(2000);
+    
+    console.log('Step 8: Looking for Load Specifications button...');
     const allButtons = Array.from(document.querySelectorAll('button'));
     console.log(`   Found ${allButtons.length} buttons total`);
     
     const loadSpecBtn = allButtons.find(btn => btn.textContent.includes('Load Specifications'));
     if (loadSpecBtn) {
       console.log('   ✓ Found Load Specifications button');
-      console.log('Step 10: Clicking Load Specifications...');
+      console.log('Step 9: Clicking Load Specifications...');
       loadSpecBtn.click();
       console.log('   ✓ Clicked, waiting 4000ms for load...');
       await sleep(4000);
