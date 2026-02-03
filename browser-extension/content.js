@@ -572,32 +572,59 @@ async function selectCampaign(campaignName) {
       }
       
       if (!itemsToClick.length) {
-        // Log all elements in dropdown menu
-        const dropdownMenu = document.querySelector('.dropdown-menu');
-        if (dropdownMenu) {
-          console.log('   Found dropdown menu, logging all children:');
-          const allChildren = dropdownMenu.querySelectorAll('*');
-          console.log(`   Total children in menu: ${allChildren.length}`);
-          Array.from(allChildren).slice(0, 10).forEach((el, idx) => {
-            console.log(`   Child ${idx}: <${el.tagName} class="${el.className}"> "${el.textContent.trim().substring(0, 40)}..."`);
+        // Try to find elements by looking for any clickable element in dropdown menu or near the input
+        const dropdownMenus = Array.from(document.querySelectorAll('.dropdown-menu, [role="listbox"], [class*="dropdown"]'));
+        console.log(`   Found ${dropdownMenus.length} dropdown containers`);
+        
+        if (dropdownMenus.length > 0) {
+          // Get all clickable elements from dropdown menus
+          const allClickable = [];
+          dropdownMenus.forEach(menu => {
+            allClickable.push(...menu.querySelectorAll('a, button, [role="option"], li, div[class*="item"]'));
           });
-        } else {
-          console.log('   No .dropdown-menu element found either');
+          itemsToClick = allClickable;
+          console.log(`   Found ${itemsToClick.length} clickable elements in dropdown menus`);
         }
+      }
+      
+      if (!itemsToClick.length) {
+        // Last resort: find ANY element on the page containing the exact campaign name that appears after the input
+        console.log('   Last resort: searching for elements containing campaign name...');
+        const allElements = Array.from(document.querySelectorAll('*'));
+        itemsToClick = allElements.filter(el => {
+          const text = el.textContent.trim();
+          // Match exact campaign ID or campaign with description containing ID
+          return text === campaignName || (text.startsWith(campaignName) && text.length < 100);
+        }).filter(el => {
+          // Filter out the input element itself
+          return el.tagName !== 'INPUT';
+        });
+        console.log(`   Found ${itemsToClick.length} elements containing "${campaignName}"`);
       }
     }
     
     if (!itemsToClick.length) {
       console.error('   ❌ FAILED: No dropdown items found with any selector');
+      console.log('   Logging page structure around campaign field for debugging...');
+      const campaignForm = Array.from(document.querySelectorAll('div.form-group')).find(g => 
+        g.textContent.toLowerCase().includes('campaign')
+      );
+      if (campaignForm) {
+        console.log('   Campaign form group HTML:', campaignForm.innerHTML.substring(0, 500));
+      }
       throw new Error('No dropdown items found');
     }
     
     // Log all available items
-    itemsToClick.forEach((item, idx) => {
+    itemsToClick.slice(0, 20).forEach((item, idx) => {
       console.log(`   Item ${idx}: "${item.textContent.trim().substring(0, 50)}..."`);
     });
     
-    const matchItem = itemsToClick.find(item => item.textContent.toLowerCase().includes(campaignName.toLowerCase())) || itemsToClick[0];
+    const matchItem = itemsToClick.find(item => {
+      const text = item.textContent.trim().toLowerCase();
+      return text === campaignName.toLowerCase() || text.startsWith(campaignName.toLowerCase());
+    }) || itemsToClick[0];
+    
     const itemText = matchItem.textContent.trim();
     console.log(`   ✓ Selected item to click: "${itemText.substring(0, 50)}..."`);
     
