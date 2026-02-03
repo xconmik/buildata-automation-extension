@@ -11,6 +11,17 @@ const progress = document.getElementById('progress');
 const campaignInput = document.getElementById('campaignInput');
 const campaignToggle = document.getElementById('campaignToggle');
 const toggleLabel = document.getElementById('toggleLabel');
+const autoButtonsToggle = document.getElementById('autoButtonsToggle');
+const autoButtonsLabel = document.getElementById('autoButtonsLabel');
+
+// Initialize auto buttons toggle label
+if (autoButtonsToggle.checked) {
+  autoButtonsLabel.textContent = 'ON';
+  autoButtonsLabel.style.color = '#2ecc71';
+} else {
+  autoButtonsLabel.textContent = 'OFF';
+  autoButtonsLabel.style.color = '#7f8c8d';
+}
 
 // Helper function for delays
 function sleep(ms) {
@@ -28,6 +39,17 @@ campaignToggle.addEventListener('change', () => {
     campaignInput.disabled = true;
     toggleLabel.textContent = 'OFF';
     toggleLabel.style.color = '#7f8c8d';
+  }
+});
+
+// Handle auto buttons toggle
+autoButtonsToggle.addEventListener('change', () => {
+  if (autoButtonsToggle.checked) {
+    autoButtonsLabel.textContent = 'ON';
+    autoButtonsLabel.style.color = '#2ecc71';
+  } else {
+    autoButtonsLabel.textContent = 'OFF';
+    autoButtonsLabel.style.color = '#7f8c8d';
   }
 });
 
@@ -178,6 +200,7 @@ async function processNextLead() {
   const enrichedLead = {
     ...lead,
     campaignName: campaignName, // Will be empty string if toggle is OFF
+    autoButtonsEnabled: autoButtonsToggle.checked,
     scrapedPhone: zoomData.phone,
     scrapedHeadquarters: zoomData.headquarters,
     scrapedEmployees: zoomData.employees,

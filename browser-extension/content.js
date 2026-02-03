@@ -18,39 +18,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+// Helper: find button by partial text match (case-insensitive)
+function findButtonByText(textPart) {
+  return Array.from(document.querySelectorAll('button')).find(btn =>
+    btn.textContent.toUpperCase().includes(textPart.toUpperCase())
+  );
+}
+
+// Helper: find input by label text (case-insensitive)
+function findInputByLabel(labelText) {
+  const labels = Array.from(document.querySelectorAll('label'));
+  const label = labels.find(l => l.textContent.toUpperCase().includes(labelText.toUpperCase()));
+  if (label && label.htmlFor) {
+    return document.getElementById(label.htmlFor);
+  }
+  return null;
+}
+
+// Helper: handle modal OK (or other) button if it appears
+async function handleModalIfAppears(buttonText = 'OK') {
+  const modalOkBtn = Array.from(document.querySelectorAll('button')).find(btn =>
+    btn.textContent.trim() === buttonText && btn.closest('.modal-content')
+  );
+  if (modalOkBtn) {
+    console.log(`⚠️ Modal appeared - clicking ${buttonText} button`);
+    modalOkBtn.click();
+    await sleep(1000);
+  }
+}
+
 async function fillBuildataForm(data) {
   console.log('=== FILLING FORM WITH DATA ===');
   console.log('Campaign Name received:', data.campaignName);
   console.log('Full data:', data);
-  
-  // Helper function to find button by partial text match (dynamically, not hardcoded)
-  const findButtonByText = (textPart) => {
-    return Array.from(document.querySelectorAll('button')).find(btn => 
-      btn.textContent.toUpperCase().includes(textPart.toUpperCase())
-    );
-  };
-  
-  // Helper function to find form input by label text (dynamically, not hardcoded)
-  const findInputByLabel = (labelText) => {
-    const labels = Array.from(document.querySelectorAll('label'));
-    const label = labels.find(l => l.textContent.toUpperCase().includes(labelText.toUpperCase()));
-    if (label && label.htmlFor) {
-      return document.getElementById(label.htmlFor);
-    }
-    return null;
-  };
-  
-  // Helper function to find and click modal button (dynamically)
-  const handleModalIfAppears = async (buttonText = 'OK') => {
-    const modalOkBtn = Array.from(document.querySelectorAll('button')).find(btn => 
-      btn.textContent.trim() === buttonText && btn.closest('.modal-content')
-    );
-    if (modalOkBtn) {
-      console.log(`⚠️ Modal appeared - clicking ${buttonText} button`);
-      modalOkBtn.click();
-      await sleep(1000);
-    }
-  };
+  window.__buildataAutoButtonsEnabled = data.autoButtonsEnabled !== false;
   
   // Parse name
   const firstLast = (data['First Name, Last Name'] || data.firstNameLastName || '').split(/,| /).map(s => s.trim()).filter(Boolean);
@@ -180,14 +181,18 @@ async function fillBuildataForm(data) {
   await sleep(500);
   
   // Click Check Email button - dynamically find it by text
-  const checkEmailBtn = findButtonByText('Check Email');
-  if (checkEmailBtn) {
-    console.log('✓ Clicking Check Email button...');
-    checkEmailBtn.click();
-    await sleep(2000); // Wait for email validation
-    await handleModalIfAppears('OK');
+  if (data.autoButtonsEnabled !== false) {
+    const checkEmailBtn = findButtonByText('Check Email');
+    if (checkEmailBtn) {
+      console.log('✓ Clicking Check Email button...');
+      checkEmailBtn.click();
+      await sleep(2000); // Wait for email validation
+      await handleModalIfAppears('OK');
+    } else {
+      console.warn('⚠️ Check Email button not found');
+    }
   } else {
-    console.warn('⚠️ Check Email button not found');
+    console.log('⏭️ Auto button clicks OFF - skipping Check Email');
   }
   
   // Fill website/domain and click Check Suppression button
@@ -195,28 +200,36 @@ async function fillBuildataForm(data) {
   await sleep(500);
   
   // Click Check Suppression button - dynamically find it
-  const checkSuppressionBtn = findButtonByText('Check Suppression');
-  if (checkSuppressionBtn) {
-    console.log('✓ Clicking Check Suppression button...');
-    checkSuppressionBtn.click();
-    await sleep(2000); // Wait for suppression check
-    await handleModalIfAppears('OK');
+  if (data.autoButtonsEnabled !== false) {
+    const checkSuppressionBtn = findButtonByText('Check Suppression');
+    if (checkSuppressionBtn) {
+      console.log('✓ Clicking Check Suppression button...');
+      checkSuppressionBtn.click();
+      await sleep(2000); // Wait for suppression check
+      await handleModalIfAppears('OK');
+    } else {
+      console.warn('⚠️ Check Suppression button not found');
+    }
   } else {
-    console.warn('⚠️ Check Suppression button not found');
+    console.log('⏭️ Auto button clicks OFF - skipping Check Suppression');
   }
   
   await typeSlowly('input#contactlink', data['Contact Link'] || data.contactLinkedIn || '');
   await sleep(500);
   
   // Click Check Duplicates button - dynamically find it
-  const checkDuplicatesBtn = findButtonByText('Check Duplicates');
-  if (checkDuplicatesBtn) {
-    console.log('✓ Clicking Check Duplicates button...');
-    checkDuplicatesBtn.click();
-    await sleep(2000); // Wait for duplicate check
-    await handleModalIfAppears('OK');
+  if (data.autoButtonsEnabled !== false) {
+    const checkDuplicatesBtn = findButtonByText('Check Duplicates');
+    if (checkDuplicatesBtn) {
+      console.log('✓ Clicking Check Duplicates button...');
+      checkDuplicatesBtn.click();
+      await sleep(2000); // Wait for duplicate check
+      await handleModalIfAppears('OK');
+    } else {
+      console.warn('⚠️ Check Duplicates button not found');
+    }
   } else {
-    console.warn('⚠️ Check Duplicates button not found');
+    console.log('⏭️ Auto button clicks OFF - skipping Check Duplicates');
   }
   
   // === COMPANY PROFILE ===
@@ -616,19 +629,23 @@ async function selectCampaign(campaignName) {
     await sleep(2000);
     
     console.log('Step 8: Looking for Load Specifications button...');
-    const loadSpecBtn = findButtonByText('Load Specifications');
-    if (loadSpecBtn) {
-      console.log('   ✓ Found Load Specifications button');
-      console.log('Step 9: Clicking Load Specifications...');
-      loadSpecBtn.click();
-      console.log('   ✓ Clicked, waiting 4000ms for load...');
-      await sleep(4000);
+    if (window.__buildataAutoButtonsEnabled !== false) {
+      const loadSpecBtn = findButtonByText('Load Specifications');
+      if (loadSpecBtn) {
+        console.log('   ✓ Found Load Specifications button');
+        console.log('Step 9: Clicking Load Specifications...');
+        loadSpecBtn.click();
+        console.log('   ✓ Clicked, waiting 4000ms for load...');
+        await sleep(4000);
+      } else {
+        console.warn('   ⚠️ Load Specifications button not found');
+        const allButtons = Array.from(document.querySelectorAll('button'));
+        allButtons.slice(0, 10).forEach((btn, idx) => {
+          console.log(`   Button ${idx}: "${btn.textContent.trim().substring(0, 40)}..."`);
+        });
+      }
     } else {
-      console.warn('   ⚠️ Load Specifications button not found');
-      const allButtons = Array.from(document.querySelectorAll('button'));
-      allButtons.slice(0, 10).forEach((btn, idx) => {
-        console.log(`   Button ${idx}: "${btn.textContent.trim().substring(0, 40)}..."`);
-      });
+      console.log('⏭️ Auto button clicks OFF - skipping Load Specifications');
     }
     
   } catch (error) {
