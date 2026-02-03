@@ -70,13 +70,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function scrapeZoomInfoData(domain) {
-  if (!domain) return { phone: '', headquarters: '', employees: '', revenue: '', zoomInfoUrl: '' };
+  // Validate domain
+  if (!domain || domain.trim() === '') {
+    console.log('⚠ Empty domain provided, cannot scrape');
+    return { phone: '', headquarters: '', employees: '', revenue: '', zoomInfoUrl: '' };
+  }
   
+  domain = domain.trim();
   const scrapedData = { phone: '', headquarters: '', employees: '', revenue: '', zoomInfoUrl: '' };
   
   try {
-    console.log('=== Starting ZoomInfo scrape for domain:', domain);
-    // Open Google search for ZoomInfo
+    console.log('=== STEP 2: Searching ZoomInfo main page for domain:', domain);
+    
+    // STEP 2: Search domain + zoominfo on Google
     const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(domain)}+zoominfo`;
     console.log('Opening search:', searchUrl);
     const searchTab = await chrome.tabs.create({ url: searchUrl, active: false });
@@ -85,48 +91,52 @@ async function scrapeZoomInfoData(domain) {
     console.log('Waiting for Google search to load...');
     await sleep(4000);
     
-    // Try to find and click ZoomInfo link
+    // Find and extract ZoomInfo link from search results
     try {
-      console.log('Looking for ZoomInfo link in search results...');
+      console.log('Looking for ZoomInfo company link in search results...');
       const result = await chrome.tabs.sendMessage(searchTab.id, { action: 'findZoomInfoLink' });
-      console.log('Result from findZoomInfoLink:', result);
+      console.log('Search results:', result);
       
       if (result && result.zoomInfoUrl) {
         console.log('✓ Found ZoomInfo URL:', result.zoomInfoUrl);
         scrapedData.zoomInfoUrl = result.zoomInfoUrl;
         
-        // Navigate to the ZoomInfo page
+        // Navigate to ZoomInfo page and scrape
         await chrome.tabs.update(searchTab.id, { url: result.zoomInfoUrl });
-        console.log('Navigating to ZoomInfo page...');
-        await sleep(6000); // Wait longer for ZoomInfo page to fully load
+        console.log('Navigating to ZoomInfo company page...');
+        await sleep(6000);
         
-        // Now scrape the ZoomInfo page
-        console.log('Scraping ZoomInfo page...');
+        // Scrape the ZoomInfo company page
+        console.log('Scraping ZoomInfo page for: phone, headquarters, employees, revenue');
         const data = await chrome.tabs.sendMessage(searchTab.id, { action: 'scrapeZoomInfo' });
-        console.log('Received data from ZoomInfo:', data);
+        console.log('ZoomInfo data received:', data);
         
         if (data && (data.phone || data.headquarters || data.employees || data.revenue)) {
           Object.assign(scrapedData, data);
-          console.log('✓ ZoomInfo scraping complete:', scrapedData);
+          console.log('✓ ZoomInfo main page scraping success:', scrapedData);
         } else {
           console.log('⚠ ZoomInfo returned empty data');
         }
       } else {
-        console.log('✗ No ZoomInfo link found in search results');
+        console.log('✗ No ZoomInfo company link found in search results');
       }
     } catch (e) {
-      console.log('✗ Could not scrape ZoomInfo:', e.message);
+      console.log('✗ Error during ZoomInfo search:', e.message);
       console.error('Full error:', e);
     }
     
-    // Close tab
-    await chrome.tabs.remove(searchTab.id);
+    // Close search tab
+    try {
+      await chrome.tabs.remove(searchTab.id);
+    } catch (e) {
+      console.log('Could not close search tab');
+    }
     
   } catch (error) {
     console.error('Error scraping ZoomInfo:', error);
   }
   
-  console.log('Returning ZoomInfo data:', scrapedData);
+  console.log('=== STEP 2 Complete. Returning data:', scrapedData);
   return scrapedData;
 }
 
@@ -224,14 +234,19 @@ async function scrapeDataForLead(domain) {
 }
 
 async function scrapeZoomInfoEmployeeDirectory(domain) {
-  if (!domain) return { streetAddress: '', city: '', state: '', zipCode: '', employees: '' };
+  // Validate domain
+  if (!domain || domain.trim() === '') {
+    console.log('⚠ Empty domain provided, cannot scrape employee directory');
+    return { streetAddress: '', city: '', state: '', zipCode: '', employees: '' };
+  }
   
+  domain = domain.trim();
   const scrapedData = { streetAddress: '', city: '', state: '', zipCode: '', employees: '' };
   
   try {
-    console.log('=== Starting ZoomInfo Employee Directory scrape for domain:', domain);
+    console.log('=== STEP 3: Searching ZoomInfo employee directory for domain:', domain);
     
-    // Open Google search for ZoomInfo employee directory
+    // STEP 3: Search domain + zoominfo + employee on Google
     const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(domain)}+zoominfo+employee`;
     console.log('Opening search:', searchUrl);
     const searchTab = await chrome.tabs.create({ url: searchUrl, active: false });
@@ -240,50 +255,52 @@ async function scrapeZoomInfoEmployeeDirectory(domain) {
     console.log('Waiting for Google search to load...');
     await sleep(4000);
     
-    // Get ZoomInfo link from Google search
+    // Find and extract ZoomInfo link from search results
     try {
       console.log('Looking for ZoomInfo employee directory link...');
       const result = await chrome.tabs.sendMessage(searchTab.id, { action: 'findZoomInfoLink' });
+      console.log('Search results:', result);
       
       if (result && result.zoomInfoUrl) {
         console.log('✓ Found ZoomInfo URL:', result.zoomInfoUrl);
         
-        // Navigate to the ZoomInfo page
+        // Navigate to ZoomInfo employee directory and scrape
         await chrome.tabs.update(searchTab.id, { url: result.zoomInfoUrl });
-        console.log('Navigating to ZoomInfo employee directory...');
-        await sleep(6000); // Wait longer for ZoomInfo page to fully load
+        console.log('Navigating to ZoomInfo employee directory page...');
+        await sleep(6000);
         
-        // Now scrape the employee directory page
-        console.log('Scraping ZoomInfo employee directory page...');
+        // Scrape the employee directory page
+        console.log('Scraping ZoomInfo employee directory for: address, employee count');
         const data = await chrome.tabs.sendMessage(searchTab.id, { action: 'scrapeZoomInfoEmployeeDirectory' });
-        console.log('Received data from ZoomInfo directory:', data);
+        console.log('Employee directory data received:', data);
         
         if (data) {
           Object.assign(scrapedData, data);
-          console.log('✓ ZoomInfo employee directory scraping complete:', scrapedData);
+          console.log('✓ ZoomInfo employee directory scraping success:', scrapedData);
         }
       } else {
-        console.log('✗ No ZoomInfo link found in search results');
+        console.log('✗ No ZoomInfo employee directory link found');
       }
     } catch (e) {
-      console.log('✗ Could not scrape ZoomInfo employee directory:', e.message);
+      console.log('✗ Error during employee directory search:', e.message);
       console.error('Full error:', e);
     }
     
-    // Close tab
+    // Close search tab
     try {
       await chrome.tabs.remove(searchTab.id);
     } catch (e) {
-      console.log('Could not close tab:', e);
+      console.log('Could not close search tab');
     }
     
   } catch (error) {
     console.error('Error scraping ZoomInfo employee directory:', error);
   }
   
-  console.log('Returning ZoomInfo employee directory data:', scrapedData);
+  console.log('=== STEP 3 Complete. Returning data:', scrapedData);
   return scrapedData;
 }
 
+function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
