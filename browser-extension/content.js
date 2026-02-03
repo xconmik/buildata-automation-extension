@@ -418,26 +418,47 @@ async function selectCampaign(campaignName) {
   try {
     await sleep(500);
     
+    console.log('Step 1: Looking for campaign dropdown button...');
     // Click the campaign dropdown button (scope to Campaign field)
     let campaignBtn = null;
-    const campaignGroup = Array.from(document.querySelectorAll('div.form-group')).find(group => {
+    const allFormGroups = document.querySelectorAll('div.form-group');
+    console.log(`   Found ${allFormGroups.length} form groups total`);
+    
+    const campaignGroup = Array.from(allFormGroups).find(group => {
       const label = group.querySelector('label');
+      const labelText = label ? label.textContent : '';
+      console.log(`   Checking form group label: "${labelText}"`);
       return label && label.textContent.toLowerCase().includes('campaign');
     });
+    
     if (campaignGroup) {
+      console.log('   ✓ Found campaign form group');
       campaignBtn = campaignGroup.querySelector('button.dropdown-toggle[type="button"], button.btn.dropdown-toggle');
+      if (campaignBtn) {
+        console.log('   ✓ Found button in campaign group');
+      }
+    } else {
+      console.log('   ⚠️ No campaign form group found, trying generic selector');
     }
+    
     if (!campaignBtn) {
       campaignBtn = document.querySelector('button.dropdown-toggle[type="button"], button.btn.dropdown-toggle');
+      if (campaignBtn) {
+        console.log('   ✓ Found button with generic selector');
+      }
     }
+    
     if (!campaignBtn) {
+      console.error('   ❌ FAILED: Campaign dropdown button not found');
       throw new Error('Campaign dropdown button not found');
     }
     
-    console.log('✓ Clicking campaign button...');
+    console.log('Step 2: Clicking campaign button...');
     campaignBtn.click();
-    await sleep(2500); // Increased from 1500ms
+    console.log('   ✓ Button clicked, waiting 2500ms...');
+    await sleep(2500);
     
+    console.log('Step 3: Looking for search input...');
     // Find and focus search input with multiple fallback selectors
     let searchInput = document.querySelector('input.form-control[placeholder="Search..."]') ||
               document.querySelector('input[placeholder*="Search"]') ||
@@ -448,51 +469,78 @@ async function selectCampaign(campaignName) {
               document.querySelector('input[type="text"].form-control');
     
     if (searchInput) {
-      console.log('✓ Found search input, typing campaign...');
+      console.log('   ✓ Found search input');
+      console.log(`   Input element:`, searchInput);
       
+      console.log('Step 4: Setting campaign value...');
       searchInput.focus();
+      console.log('   ✓ Focused input');
       await sleep(1000);
       
       // Set value directly in one operation
+      console.log(`   Setting value to: "${campaignName}"`);
       searchInput.value = campaignName;
+      console.log(`   Current value after set: "${searchInput.value}"`);
       
       // Fire single input event
       searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+      console.log('   ✓ Dispatched input event');
       
-      console.log('✓ Set campaign value to:', campaignName);
-      console.log('✓ Finished typing, waiting for dropdown...');
+      console.log('   Waiting 2500ms for dropdown to filter...');
       await sleep(2500);
     } else {
-      console.warn('⚠️ Search input not found. Trying to select from dropdown list directly.');
+      console.warn('   ⚠️ Search input not found. Trying to select from dropdown list directly.');
       await sleep(1000);
     }
     
-    // Click dropdown item (match campaign name if possible)
+    console.log('Step 5: Looking for dropdown items...');
     const dropdownItems = Array.from(document.querySelectorAll('div.dropdown-item'));
+    console.log(`   Found ${dropdownItems.length} dropdown items`);
+    
     if (!dropdownItems.length) {
+      console.error('   ❌ FAILED: No dropdown items found');
       throw new Error('No dropdown items found');
     }
+    
+    // Log all available items
+    dropdownItems.forEach((item, idx) => {
+      console.log(`   Item ${idx}: "${item.textContent.trim().substring(0, 50)}..."`);
+    });
+    
     const matchItem = dropdownItems.find(item => item.textContent.toLowerCase().includes(campaignName.toLowerCase())) || dropdownItems[0];
     const itemText = matchItem.textContent.trim();
-    console.log(`✓ Clicking item: "${itemText.substring(0, 50)}..."`);
-    await sleep(500); // Increased from 200ms
-    matchItem.click();
-    await sleep(2000); // Increased from 1200ms
+    console.log(`   ✓ Selected item to click: "${itemText.substring(0, 50)}..."`);
     
-    // Click Load Specifications
-    const loadSpecBtn = Array.from(document.querySelectorAll('button')).find(btn => btn.textContent.includes('Load Specifications'));
+    console.log('Step 6: Clicking dropdown item...');
+    await sleep(500);
+    matchItem.click();
+    console.log('   ✓ Item clicked, waiting 2000ms...');
+    await sleep(2000);
+    
+    console.log('Step 7: Looking for Load Specifications button...');
+    const allButtons = Array.from(document.querySelectorAll('button'));
+    console.log(`   Found ${allButtons.length} buttons total`);
+    
+    const loadSpecBtn = allButtons.find(btn => btn.textContent.includes('Load Specifications'));
     if (loadSpecBtn) {
-      console.log('✓ Clicking Load Specifications...');
+      console.log('   ✓ Found Load Specifications button');
+      console.log('Step 8: Clicking Load Specifications...');
       loadSpecBtn.click();
-      await sleep(4000); // Increased from 3000ms
+      console.log('   ✓ Clicked, waiting 4000ms for load...');
+      await sleep(4000);
     } else {
-      console.warn('⚠️ Load Specifications button not found');
+      console.warn('   ⚠️ Load Specifications button not found');
+      allButtons.slice(0, 10).forEach((btn, idx) => {
+        console.log(`   Button ${idx}: "${btn.textContent.trim().substring(0, 40)}..."`);
+      });
     }
     
     console.log(`========== CAMPAIGN SELECTION COMPLETE ==========\n`);
     
   } catch (error) {
-    console.error('❌ Campaign selection error:', error);
+    console.error('❌❌❌ Campaign selection FAILED at step:', error.message);
+    console.error('Full error:', error);
+    console.error('Stack trace:', error.stack);
     throw error;
   }
 }
