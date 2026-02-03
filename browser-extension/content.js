@@ -77,11 +77,6 @@ async function fillBuildataForm(data) {
   const scrapedEmployees = data.scrapedEmployees || '';
   const scrapedRevenue = data.scrapedRevenue || '';
   const scrapedEmail = data.scrapedEmail || '';
-  const scrapedStreetAddress = data.scrapedStreetAddress || '';
-  const scrapedCity = data.scrapedCity || '';
-  const scrapedState = data.scrapedState || '';
-  const scrapedZipCode = data.scrapedZipCode || '';
-  const scrapedEmployeeDirectoryCount = data.scrapedEmployeeDirectoryCount || '';
   
   console.log('Using scraped data:', { scrapedPhone, scrapedHeadquarters, scrapedEmployees, scrapedRevenue, scrapedEmail });
   

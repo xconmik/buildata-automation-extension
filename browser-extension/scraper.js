@@ -16,11 +16,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     findZoomInfoLink().then(data => sendResponse(data));
     return true;
   }
-  
-  if (message.action === 'scrapeZoomInfoEmployeeDirectory') {
-    scrapeZoomInfoEmployeeDirectory().then(data => sendResponse(data));
-    return true;
-  }
 });
 
 async function findZoomInfoLink() {
@@ -198,110 +193,5 @@ async function scrapeRocketReach(message) {
     console.error('Error scraping RocketReach:', error);
   }
   
-  return data;
-}
-
-async function scrapeZoomInfoEmployeeDirectory() {
-  const data = {
-    streetAddress: '',
-    city: '',
-    state: '',
-    zipCode: '',
-    employees: ''
-  };
-  
-  try {
-    console.log('========================================');
-    console.log('ZOOMINFO EMPLOYEE DIRECTORY SCRAPER');
-    console.log('Current URL:', window.location.href);
-    console.log('========================================');
-    
-    let titleText = '';
-    
-    // Step 1: Try to find subtitle element with class containing "subTitle"
-    console.log('Searching for subtitle element...');
-    const subtitleElements = document.querySelectorAll('[class*="subTitle"], [class*="subtitle"]');
-    console.log(`Found ${subtitleElements.length} potential subtitle elements`);
-    
-    for (const el of subtitleElements) {
-      const text = el.textContent.trim();
-      console.log('Checking element:', text.substring(0, 100));
-      if (text.includes('located in') && text.includes('employees')) {
-        titleText = text;
-        console.log('✓ Found correct subtitle element');
-        break;
-      }
-    }
-    
-    // Step 2: If not found, search entire page for the pattern
-    if (!titleText) {
-      console.log('Subtitle not found via selector, searching body text...');
-      const bodyText = document.body.textContent;
-      
-      // Look for pattern: "...is located in ... and has ... employees"
-      const match = bodyText.match(/corporate office is located in([^.]+?)and has ([^.]+?)employees/i);
-      if (match) {
-        titleText = `corporate office is located in${match[1]}and has ${match[2]}employees`;
-        console.log('✓ Found in body text:', titleText);
-      }
-    }
-    
-    // Step 3: Extract data from titleText
-    if (titleText) {
-      console.log('Processing text:', titleText);
-      
-      // Extract employees count (e.g., "10K+", "5000+", "500")
-      const empMatch = titleText.match(/has\s+([0-9KMB.]+\+?)\s+employees/i);
-      if (empMatch) {
-        data.employees = empMatch[1];
-        console.log('✓ Found employees:', data.employees);
-      }
-      
-      // Extract address: "located in [Street] [City], [City], [State], [ZIP]"
-      // Pattern: "Beiersdorfstrasse Hamburg 1-9, Hamburg, Hamburg, 20245"
-      let locatedMatch = titleText.match(/located in\s+([^,]+)\s+([^,]+),\s*([^,]+),\s*([^,]+),\s*(\d{4,5})/);
-      
-      if (locatedMatch) {
-        // Combine street and first city reference
-        data.streetAddress = (locatedMatch[1] + ' ' + locatedMatch[2]).trim();
-        data.city = locatedMatch[3].trim();
-        data.state = locatedMatch[4].trim();
-        data.zipCode = locatedMatch[5].trim();
-        console.log('✓ Parsed address (Pattern 1):', {
-          street: data.streetAddress,
-          city: data.city,
-          state: data.state,
-          zip: data.zipCode
-        });
-      } else {
-        // Try simpler pattern
-        locatedMatch = titleText.match(/located in\s+([^,]+),\s*([^,]+),\s*([^,]+),\s*(\d{4,5})/);
-        if (locatedMatch) {
-          data.streetAddress = locatedMatch[1].trim();
-          data.city = locatedMatch[2].trim();
-          data.state = locatedMatch[3].trim();
-          data.zipCode = locatedMatch[4].trim();
-          console.log('✓ Parsed address (Pattern 2):', {
-            street: data.streetAddress,
-            city: data.city,
-            state: data.state,
-            zip: data.zipCode
-          });
-        } else {
-          console.log('✗ Could not parse address with any pattern');
-          console.log('Text was:', titleText.substring(0, 200));
-        }
-      }
-    } else {
-      console.log('✗ Could not find address text in page');
-      console.log('Page URL:', window.location.href);
-    }
-    
-  } catch (error) {
-    console.error('Error scraping ZoomInfo employee directory:', error);
-    console.error('Stack:', error.stack);
-  }
-  
-  console.log('✓ ZoomInfo employee directory data:', data);
   return data;
 }
