@@ -453,22 +453,13 @@ async function selectCampaign(campaignName) {
       searchInput.focus();
       await sleep(1000);
       
-      // Clear the field completely
-      searchInput.value = '';
-      await sleep(500);
+      // Set value directly in one operation
+      searchInput.value = campaignName;
       
-      // Type character by character but slower and simpler
-      for (let i = 0; i < campaignName.length; i++) {
-        const currentValue = searchInput.value;
-        searchInput.value = currentValue + campaignName[i];
-        
-        // Only dispatch input event, not keyup/change
-        const event = new Event('input', { bubbles: true });
-        searchInput.dispatchEvent(event);
-        
-        await sleep(200); // Much slower typing
-      }
+      // Fire single input event
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
       
+      console.log('✓ Set campaign value to:', campaignName);
       console.log('✓ Finished typing, waiting for dropdown...');
       await sleep(2500);
     } else {
