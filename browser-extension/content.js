@@ -78,6 +78,33 @@ async function fillBuildataForm(data) {
   const scrapedRevenue = data.scrapedRevenue || '';
   const scrapedEmail = data.scrapedEmail || '';
   
+  // Parse headquarters string into address components
+  // Format: "Street Address, City, State, ZipCode, Country"
+  // Example: "Londorfer Strasse 65, Gruenberg, Hesse, 35305, Germany"
+  let scrapedStreetAddress = '';
+  let scrapedCity = '';
+  let scrapedState = '';
+  let scrapedZipCode = '';
+  
+  if (scrapedHeadquarters) {
+    console.log('Parsing headquarters:', scrapedHeadquarters);
+    const parts = scrapedHeadquarters.split(',').map(p => p.trim());
+    
+    if (parts.length >= 4) {
+      scrapedStreetAddress = parts[0]; // "Londorfer Strasse 65"
+      scrapedCity = parts[1];           // "Gruenberg"
+      scrapedState = parts[2];          // "Hesse"
+      scrapedZipCode = parts[3];        // "35305"
+      
+      console.log('Parsed address components:', {
+        street: scrapedStreetAddress,
+        city: scrapedCity,
+        state: scrapedState,
+        zip: scrapedZipCode
+      });
+    }
+  }
+  
   console.log('Using scraped data:', { scrapedPhone, scrapedHeadquarters, scrapedEmployees, scrapedRevenue, scrapedEmail });
   
   // Convert ZoomInfo employee count to Buildata dropdown value
@@ -358,7 +385,7 @@ async function fillBuildataForm(data) {
     if (parent) streetInput = parent;
   }
   if (streetInput) {
-    const streetValue = scrapedStreetAddress || scrapedHeadquarters || data['Street Address'] || data.address || '';
+    const streetValue = scrapedStreetAddress || data['Street Address'] || data.address || '';
     if (streetValue) {
       streetInput.value = streetValue;
       streetInput.dispatchEvent(new Event('input', { bubbles: true }));
