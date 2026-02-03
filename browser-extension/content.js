@@ -712,33 +712,129 @@ async function selectCampaign(campaignName) {
     
     console.log('Step 3: Looking for search input...');
     
-    // Find the virtualized container (special scrolling list component)
-    let virtualizedContainer = document.querySelector('.virtualized');
-    if (virtualizedContainer) {
-      console.log('   ✓ Found virtualized container');
+    // Step 3A: Find the dropdown panel first (the one showing)
+    let dropdownPanel = null;
+    const panelSelectors = [
+      '.dropdown-menu.show',
+      '.show[class*="dropdown"]',
+      '[role="listbox"].show',
+      '.cdk-overlay-pane',
+      '.dropdown-menu[style*="display: block"]'
+    ];
+    
+    for (const selector of panelSelectors) {
+      dropdownPanel = document.querySelector(selector);
+      if (dropdownPanel) {
+        console.log(`   ✓ Found dropdown panel with selector: "${selector}"`);
+        break;
+      }
     }
     
-    // Find dropdown panel
-    const dropdownPanel = document.querySelector(
-      '.dropdown-menu.show, .dropdown-menu[style*="display"], [role="listbox"], .ng-dropdown-panel, .cdk-overlay-pane, .select2-container--open, .virtualized'
-    );
+    if (!dropdownPanel) {
+      console.log('   ⚠️ No dropdown panel found with standard selectors');
+    }
     
-    // Find search input - look inside virtualized or panel
+    // Step 3B: The virtualized container should be INSIDE the panel
+    let virtualizedContainer = null;
+    if (dropdownPanel) {
+      virtualizedContainer = dropdownPanel.querySelector('.virtualized');
+      console.log(`   Virtualized inside panel: ${virtualizedContainer ? 'YES' : 'NO'}`);
+    }
+    
+    // Fallback: Find any visible virtualized container
+    if (!virtualizedContainer) {
+      const allVirtualized = Array.from(document.querySelectorAll('.virtualized'));
+      for (const virt of allVirtualized) {
+        if (virt.offsetHeight > 0) {
+          virtualizedContainer = virt;
+          console.log('   ✓ Found visible virtualized container as fallback');
+          break;
+        }
+      }
+    }
+    
+    // Step 3C: Find search input - MUST be inside virtualized
     let searchInput = null;
+    
     if (virtualizedContainer) {
-      searchInput = virtualizedContainer.querySelector('input.form-control[placeholder="Search..."], input[placeholder*="Search"]');
+      // Log the structure we're searching in
+      const children = Array.from(virtualizedContainer.children);
+      console.log(`   Virtualized has ${children.length} direct children`);
+      children.forEach((child, idx) => {
+        console.log(`      Child ${idx}: ${child.className} - visible: ${child.offsetHeight > 0}`);
+      });
+      
+      // The input should be in a wrapper div, likely the first visible child
+      const inputWrappers = virtualizedContainer.querySelectorAll('[class*="m-"], [class*="p-"], .input-group');
+      console.log(`   Found ${inputWrappers.length} potential input wrapper elements`);
+      
+      // Try to find input in these wrappers
+      for (const wrapper of inputWrappers) {
+        const input = wrapper.querySelector('input[type="text"], input[placeholder*="Search"], input.form-control');
+        if (input && input.offsetHeight > 0) {
+          searchInput = input;
+          console.log(`   ✓ Found search input in wrapper: ${wrapper.className}`);
+          break;
+        }
+      }
+      
+      // If not found in wrappers, try direct search
+      if (!searchInput) {
+        searchInput = virtualizedContainer.querySelector('input[type="text"], input.form-control, input[placeholder*="Search"]');
+        if (searchInput && searchInput.offsetHeight > 0) {
+          console.log(`   ✓ Found search input via direct query`);
+        } else {
+          searchInput = null;
+        }
+      }
     }
-    if (!searchInput && dropdownPanel) {
-      searchInput = dropdownPanel.querySelector('input.form-control[placeholder="Search..."], input[placeholder*="Search"]');
-    }
+    
     if (!searchInput) {
-      searchInput = document.querySelector('input.form-control[placeholder="Search..."], input[placeholder*="Search"], input[type="search"]');
+      console.log('   ⚠️ Search input not found in virtualized container');
+      // Last resort: find ANY visible text input on page near a dropdown
+      const allInputs = Array.from(document.querySelectorAll('input[type="text"], input.form-control'));
+      for (const inp of allInputs) {
+        if (inp.offsetHeight > 0 && inp.placeholder && inp.placeholder.includes('Search')) {
+          searchInput = inp;
+          console.log(`   ✓ Found search input via page-wide search`);
+          break;
+        }
+      }
+    }
+    
+    if (!searchInput && dropdownPanel) {
+      const additionalSelectors = [
+        'input.form-control[placeholder="Search..."]',
+        'input[placeholder*="Search"]'
+      ];
+      for (const selector of additionalSelectors) {
+        searchInput = dropdownPanel.querySelector(selector);
+        if (searchInput && searchInput.offsetHeight > 0) {
+          console.log(`   ✓ Found search input in panel with selector: "${selector}"`);
+          break;
+        }
+      }
+    }
+    
+    if (!searchInput) {
+      console.log('   ⚠️ Search input not found. Searching document-wide...');
+      const additionalSelectors = [
+        'input.form-control[placeholder="Search..."]',
+        'input[placeholder*="Search"]',
+        'input[type="text"]'
+      ];
+      for (const selector of additionalSelectors) {
+        searchInput = document.querySelector(selector);
+        if (searchInput && searchInput.offsetHeight > 0 && searchInput.closest('.virtualized')) {
+          console.log(`   ✓ Found search input in document with selector: "${selector}"`);
+          break;
+        }
+      }
     }
     
     if (searchInput) {
-      console.log('   ✓ Found search input');
+      console.log('   ✓ Found search input!');
       console.log(`   Input element:`, searchInput);
-      
       console.log('Step 4: Clearing search to show all campaigns...');
       
       // Clear the search input to show all available campaigns
@@ -746,16 +842,19 @@ async function selectCampaign(campaignName) {
       searchInput.focus();
       searchInput.dispatchEvent(new Event('input', { bubbles: true }));
       searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+      searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+      searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Backspace', bubbles: true }));
       
       console.log(`   ✓ Cleared search to show all campaigns`);
       
-      await sleep(1500);
+      await sleep(2000);
     } else {
-      console.warn('   ⚠️ Search input not found. Trying to navigate dropdown with keyboard...');
+      console.error('   ❌ Search input STILL not found after all attempts');
+      console.log('   Trying to navigate dropdown with keyboard instead...');
       campaignBtn.focus();
       campaignBtn.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
       campaignBtn.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
-      await sleep(800);
+      await sleep(1000);
     }
     
     console.log('Step 5: Waiting for dropdown items and searching for campaign...');

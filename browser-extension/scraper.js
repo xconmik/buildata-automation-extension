@@ -117,26 +117,47 @@ async function scrapeZoomInfo() {
       if (label.textContent.includes('Headquarters')) {
         const contentSpan = label.parentElement.querySelector('span.content');
         if (contentSpan) {
-          // Try multiple methods to get full text (avoid truncation)
-          let hqText = contentSpan.title || // Try title attribute first
-                       contentSpan.getAttribute('data-text') ||
-                       contentSpan.innerText || // innerText sometimes has full content
-                       contentSpan.textContent.trim();
+          // Get all possible text sources to avoid truncation
+          let hqText = '';
           
-          // Clean up the text
+          // Method 1: Try title attribute first (often has full text)
+          if (contentSpan.title) {
+            hqText = contentSpan.title;
+          }
+          // Method 2: Try data attributes
+          else if (contentSpan.getAttribute('data-text')) {
+            hqText = contentSpan.getAttribute('data-text');
+          }
+          // Method 3: Try textContent (untruncated)
+          else if (contentSpan.textContent) {
+            hqText = contentSpan.textContent;
+          }
+          // Method 4: Try innerText
+          else if (contentSpan.innerText) {
+            hqText = contentSpan.innerText;
+          }
+          
           hqText = hqText.trim();
           
-          // If we got truncated text with "...", try to expand it
+          // If we still got truncated text, try to get from parent element
+          if (hqText && hqText.includes('...') && hqText.length < 50) {
+            console.log('⚠️ Headquarters text appears truncated, trying alternative methods...');
+            
+            // Try getting full text from parent containers
+            const parentContainer = contentSpan.closest('.icon-text-container') || contentSpan.closest('[class*="container"]');
+            if (parentContainer) {
+              const fullText = parentContainer.textContent.split('\n').find(line => 
+                line.includes('Strasse') || line.includes('Street') || line.includes('Ave') || line.includes('Blvd')
+              );
+              if (fullText) {
+                hqText = fullText.trim();
+              }
+            }
+          }
+          
+          // Last resort: if still truncated, log what we have for debugging
           if (hqText.includes('...')) {
-            // Try getting text from parent or nearby elements
-            const parent = contentSpan.parentElement;
-            if (parent && parent.title) {
-              hqText = parent.title;
-            }
-            // If still truncated, log it for debugging
-            if (hqText.includes('...')) {
-              console.log('⚠️ Headquarters text appears truncated:', hqText);
-            }
+            console.log('⚠️ Could not get full headquarters text from ZoomInfo page (CSS truncation), using what we have:', hqText);
           }
           
           data.headquarters = hqText;
