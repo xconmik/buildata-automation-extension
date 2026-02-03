@@ -735,18 +735,13 @@ async function selectCampaign(campaignName) {
       console.log('   ✓ Found search input');
       console.log(`   Input element:`, searchInput);
       
-      console.log('Step 4: Typing campaign name using typeSlowly...');
+      console.log('Step 4: Typing campaign name using enhanced typeSlowly...');
       
       // Use typeSlowly to type the campaign name character by character
       await typeSlowly(searchInput, campaignName);
       console.log(`   ✓ Typed "${campaignName}" into search input`);
       
-      // Fire input event to trigger filtering
-      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-      searchInput.dispatchEvent(new Event('change', { bubbles: true }));
-      console.log('   ✓ Fired input and change events');
-      
-      await sleep(1000);
+      await sleep(1500);
     } else {
       console.warn('   ⚠️ Search input not found. Trying to navigate dropdown with keyboard...');
       campaignBtn.focus();
@@ -820,29 +815,44 @@ async function selectCampaign(campaignName) {
         console.log(`   ✓ Attempt ${waitAttempts}: Found ${dropdownItems.length} dropdown items`);
       }
       
-      // Look for item matching the campaign name
+      // Dynamic matching: try multiple strategies
+      const searchText = campaignName.trim().toLowerCase();
+      
+      // Strategy 1: Exact or starts-with match
       foundMatch = dropdownItems.find(item => {
-        const itemText = (item.textContent || '').trim();
-        const itemValue = (item.getAttribute('data-value') || '').trim();
-        const searchText = campaignName.trim();
-        
-        // Exact match
-        if (itemText === searchText || itemValue === searchText) return true;
-        
-        // Starts with or includes
-        if (itemText.startsWith(searchText) || itemText.includes(searchText)) return true;
-        
-        // Normalized comparison
-        const normItem = itemText.toLowerCase().replace(/\s+/g, '');
-        const normValue = itemValue.toLowerCase().replace(/\s+/g, '');
-        const normSearch = searchText.toLowerCase().replace(/\s+/g, '');
-        
-        if (normItem === normSearch || normValue === normSearch) return true;
-        if (normItem.startsWith(normSearch) || normValue.startsWith(normSearch)) return true;
-        if (normItem.includes(normSearch)) return true;
-        
-        return false;
+        const itemText = (item.textContent || '').trim().toLowerCase();
+        return itemText === searchText || itemText.startsWith(searchText);
       });
+      
+      // Strategy 2: Includes match
+      if (!foundMatch) {
+        foundMatch = dropdownItems.find(item => {
+          const itemText = (item.textContent || '').trim().toLowerCase();
+          return itemText.includes(searchText);
+        });
+      }
+      
+      // Strategy 3: Check data-value or data-id attribute
+      if (!foundMatch) {
+        foundMatch = dropdownItems.find(item => {
+          const itemValue = (item.getAttribute('data-value') || item.getAttribute('data-id') || '').toLowerCase();
+          return itemValue.includes(searchText) || itemValue === searchText;
+        });
+      }
+      
+      // Strategy 4: Fuzzy match (contains most characters in order)
+      if (!foundMatch && searchText.length > 0) {
+        foundMatch = dropdownItems.find(item => {
+          const itemText = (item.textContent || '').trim().toLowerCase();
+          let searchIdx = 0;
+          for (let i = 0; i < itemText.length && searchIdx < searchText.length; i++) {
+            if (itemText[i] === searchText[searchIdx]) {
+              searchIdx++;
+            }
+          }
+          return searchIdx === searchText.length; // All chars found in order
+        });
+      }
       
       if (foundMatch) {
         console.log(`   ✓✓✓ FOUND MATCH: "${foundMatch.textContent.trim()}"`);
@@ -855,16 +865,22 @@ async function selectCampaign(campaignName) {
       }
     }
     
+    // If no match found but we have items, auto-select first item or show error
+    if (!foundMatch && dropdownItems.length > 0) {
+      console.warn(`   ⚠️ Campaign "${campaignName}" not found using all strategies after ${waitAttempts} attempts`);
+      console.log(`   Available campaigns (first 10):`);
+      dropdownItems.slice(0, 10).forEach((item, idx) => {
+        console.log(`     ${idx}: "${item.textContent.trim()}"`);
+      });
+      
+      // Fallback: If there are items, show them for manual selection later
+      // For now, throw error with full list
+      const campaignList = dropdownItems.slice(0, 5).map(i => `"${i.textContent.trim()}"`).join(', ');
+      throw new Error(`Campaign "${campaignName}" not found in dropdown. Available: ${campaignList}`);
+    }
+    
     if (!foundMatch) {
       console.error(`   ❌ Campaign "${campaignName}" not found in dropdown after ${waitAttempts} attempts`);
-      if (dropdownItems.length > 0) {
-        console.log(`   Available campaigns (first 10):`);
-        dropdownItems.slice(0, 10).forEach((item, idx) => {
-          console.log(`     ${idx}: "${item.textContent.trim()}"`);
-        });
-      } else {
-        console.error(`   ❌ NO DROPDOWN ITEMS FOUND - dropdown may not have opened`);
-      }
       throw new Error(`Campaign "${campaignName}" not found in dropdown`);
     }
     
@@ -1003,39 +1019,50 @@ async function typeSlowly(selectorOrElement, value) {
     }
   };
   
-  const commitValue = async (val) => {
+  const commitValue = async (val, fireEvents = true) => {
     setValue(val);
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-    await sleep(60);
+    if (fireEvents) {
+      // Fire comprehensive event sequence to trigger all filters
+      el.dispatchEvent(new Event('focus', { bubbles: true }));
+      await sleep(30);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
+      await sleep(60);
+    }
   };
   
   el.focus();
-  await sleep(80);
+  await sleep(100);
   
-  // Clear then set final value in one pass
-  await commitValue('');
-  await commitValue(value);
-  el.blur();
+  // Clear field first
+  await commitValue('', true);
   
-  // If value didn't stick (common after CSV reupload), fallback to manual typing
-  if (el.value !== value) {
-    console.warn(`⚠️ Value mismatch for ${typeof selectorOrElement === 'string' ? selectorOrElement : 'input element'}. Retrying with manual typing.`);
-    el.focus();
-    await sleep(50);
-    await commitValue('');
-    for (let i = 0; i < value.length; i++) {
-      const nextVal = (el.value || '') + value[i];
-      setValue(nextVal);
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      await sleep(40);
-    }
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-    el.blur();
+  // Type character by character with events
+  for (let i = 0; i < value.length; i++) {
+    const charToType = value[i];
+    const currentVal = el.value || '';
+    const nextVal = currentVal + charToType;
+    
+    setValue(nextVal);
+    
+    // Fire events for each character
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: charToType, code: `Key${charToType.toUpperCase()}`, bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keypress', { key: charToType, bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keyup', { key: charToType, code: `Key${charToType.toUpperCase()}`, bubbles: true }));
+    
+    await sleep(30);
   }
   
+  // Final event burst to ensure all listeners fire
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  el.dispatchEvent(new Event('blur', { bubbles: true }));
+  
   console.log(`✓ Typed "${value.substring(0, 40)}${value.length > 40 ? '...' : ''}" into ${typeof selectorOrElement === 'string' ? selectorOrElement : 'input element'}`);
-  await sleep(120);
+  await sleep(150);
 }
 
 function sleep(ms) {
