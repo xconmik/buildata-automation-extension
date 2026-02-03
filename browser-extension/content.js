@@ -136,6 +136,25 @@ async function fillBuildataForm(data) {
     });
   }
   
+  // Prefer employee directory address fields if provided
+  const directoryStreet = data.scrapedStreetAddress || '';
+  const directoryCity = data.scrapedCity || '';
+  const directoryState = data.scrapedState || '';
+  const directoryZip = data.scrapedZipCode || '';
+  
+  if (directoryStreet || directoryCity || directoryState || directoryZip) {
+    scrapedStreetAddress = directoryStreet || scrapedStreetAddress;
+    scrapedCity = directoryCity || scrapedCity;
+    scrapedState = directoryState || scrapedState;
+    scrapedZipCode = directoryZip || scrapedZipCode;
+    console.log('Using employee directory address override:', {
+      street: scrapedStreetAddress,
+      city: scrapedCity,
+      state: scrapedState,
+      zip: scrapedZipCode
+    });
+  }
+  
   console.log('Using scraped data:', { scrapedPhone, scrapedHeadquarters, scrapedEmployees, scrapedRevenue, scrapedEmail });
   
   // Convert ZoomInfo employee count to Buildata dropdown value
@@ -844,11 +863,13 @@ async function setDropdown(selector, value) {
   }
 }
 
-async function typeSlowly(selector, value) {
+async function typeSlowly(selectorOrElement, value) {
   if (!value) return;
-  const el = document.querySelector(selector);
+  const el = typeof selectorOrElement === 'string'
+    ? document.querySelector(selectorOrElement)
+    : selectorOrElement;
   if (!el) {
-    console.warn(`❌ Input not found: ${selector}`);
+    console.warn(`❌ Input not found: ${selectorOrElement}`);
     return;
   }
   

@@ -16,6 +16,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     findZoomInfoLink().then(data => sendResponse(data));
     return true;
   }
+
+  if (message.action === 'scrapeZoomInfoEmployeeDirectory') {
+    scrapeZoomInfoEmployeeDirectory().then(data => sendResponse(data));
+    return true;
+  }
 });
 
 async function findZoomInfoLink() {
@@ -193,5 +198,69 @@ async function scrapeRocketReach(message) {
     console.error('Error scraping RocketReach:', error);
   }
   
+  return data;
+}
+
+async function scrapeZoomInfoEmployeeDirectory() {
+  const data = {
+    streetAddress: '',
+    city: '',
+    state: '',
+    zipCode: ''
+  };
+  
+  try {
+    console.log('========================================');
+    console.log('ZOOMINFO EMPLOYEE DIRECTORY SCRAPER');
+    console.log('Current URL:', window.location.href);
+    console.log('========================================');
+    
+    let titleText = '';
+    const subtitleElements = document.querySelectorAll('[class*="subTitle"], [class*="subtitle"]');
+    
+    for (const el of subtitleElements) {
+      const text = el.textContent.trim();
+      if (text.includes('located in') && text.includes('employees')) {
+        titleText = text;
+        console.log('✓ Found subtitle text:', titleText);
+        break;
+      }
+    }
+    
+    if (!titleText) {
+      const bodyText = document.body.textContent;
+      const match = bodyText.match(/corporate office is located in([^.]+?)and has ([^.]+?)employees/i);
+      if (match) {
+        titleText = `corporate office is located in${match[1]}and has ${match[2]}employees`;
+        console.log('✓ Found subtitle text in body');
+      }
+    }
+    
+    if (titleText) {
+      // Extract address components
+      let locatedMatch = titleText.match(/located in\s+([^,]+),\s*([^,]+),\s*([^,]+),\s*(\d{4,6})/);
+      if (locatedMatch) {
+        data.streetAddress = locatedMatch[1].trim();
+        data.city = locatedMatch[2].trim();
+        data.state = locatedMatch[3].trim();
+        data.zipCode = locatedMatch[4].trim();
+      } else {
+        // Alternate pattern with street possibly containing extra comma
+        locatedMatch = titleText.match(/located in\s+(.+?),\s*([^,]+),\s*([^,]+),\s*(\d{4,6})/);
+        if (locatedMatch) {
+          data.streetAddress = locatedMatch[1].trim();
+          data.city = locatedMatch[2].trim();
+          data.state = locatedMatch[3].trim();
+          data.zipCode = locatedMatch[4].trim();
+        }
+      }
+    } else {
+      console.log('✗ Subtitle not found for employee directory');
+    }
+  } catch (error) {
+    console.error('Error scraping ZoomInfo employee directory:', error);
+  }
+  
+  console.log('ZoomInfo employee directory data:', data);
   return data;
 }
