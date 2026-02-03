@@ -450,33 +450,27 @@ async function selectCampaign(campaignName) {
     if (searchInput) {
       console.log('✓ Found search input, typing campaign...');
       
-      // Use native value setter to avoid duplication
-      const setValue = (val) => {
-        const prototype = Object.getPrototypeOf(searchInput);
-        const valueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
-        if (valueSetter) {
-          valueSetter.call(searchInput, val);
-        } else {
-          searchInput.value = val;
-        }
-      };
-      
       searchInput.focus();
-      await sleep(800);
+      await sleep(1000);
       
-      // Clear the field
-      setValue('');
-      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-      await sleep(400);
+      // Clear the field completely
+      searchInput.value = '';
+      await sleep(500);
       
-      // Set the campaign name in one pass
-      setValue(campaignName);
-      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-      searchInput.dispatchEvent(new Event('keyup', { bubbles: true }));
-      searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+      // Type character by character but slower and simpler
+      for (let i = 0; i < campaignName.length; i++) {
+        const currentValue = searchInput.value;
+        searchInput.value = currentValue + campaignName[i];
+        
+        // Only dispatch input event, not keyup/change
+        const event = new Event('input', { bubbles: true });
+        searchInput.dispatchEvent(event);
+        
+        await sleep(200); // Much slower typing
+      }
       
       console.log('✓ Finished typing, waiting for dropdown...');
-      await sleep(2500); // Increased from 1500ms
+      await sleep(2500);
     } else {
       console.warn('⚠️ Search input not found. Trying to select from dropdown list directly.');
       await sleep(1000);
