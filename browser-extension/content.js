@@ -80,6 +80,34 @@ async function fillBuildataForm(data) {
   
   console.log('Using scraped data:', { scrapedPhone, scrapedHeadquarters, scrapedEmployees, scrapedRevenue, scrapedEmail });
   
+  // Parse address components from headquarters
+  // Format: "Street Address, City, State, Zip, Country" or similar
+  let scrapedStreetAddress = '';
+  let scrapedCity = '';
+  let scrapedState = '';
+  let scrapedZipCode = '';
+  
+  if (scrapedHeadquarters) {
+    // Split by comma and trim each part
+    const parts = scrapedHeadquarters.split(',').map(p => p.trim());
+    
+    if (parts.length >= 4) {
+      // Standard format: Street, City, State, Zip
+      scrapedStreetAddress = parts[0];
+      scrapedCity = parts[1];
+      scrapedState = parts[2];
+      // Extract zip code (usually digits)
+      scrapedZipCode = parts[3].match(/\d+/)?.[0] || '';
+    } else if (parts.length === 3) {
+      // Format: Street, City, State
+      scrapedStreetAddress = parts[0];
+      scrapedCity = parts[1];
+      scrapedState = parts[2];
+    }
+    
+    console.log('Parsed address from headquarters:', { scrapedStreetAddress, scrapedCity, scrapedState, scrapedZipCode });
+  }
+  
   // Convert ZoomInfo employee count to Buildata dropdown value
   let employeeDropdownValue = '';
   if (scrapedEmployees) {
