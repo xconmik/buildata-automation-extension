@@ -1,7 +1,10 @@
 let leads = [];
 let currentIndex = 0;
 let isRunning = false;
+let isProcessing = false;
 let logRows = [];
+const lastGoodZoomData = new Map();
+const lastGoodRocketData = new Map();
 
 const csvFileInput = document.getElementById('csvFile');
 const fileInfo = document.getElementById('fileInfo');
@@ -140,6 +143,10 @@ function parseCSVLine(line) {
 }
 
 function startAutomation() {
+  if (isRunning || isProcessing) {
+    showStatus('Automation already running...', 'info');
+    return;
+  }
   if (leads.length === 0) {
     showStatus('Please upload a CSV file first', 'error');
     return;
@@ -180,6 +187,11 @@ async function processNextLead() {
     }
     return;
   }
+  if (isProcessing) {
+    console.warn('⚠️ Lead processing already in progress. Skipping duplicate call.');
+    return;
+  }
+  isProcessing = true;
   
   const lead = leads[currentIndex];
   updateProgress();
@@ -187,15 +199,38 @@ async function processNextLead() {
   const domain = lead['Domain or Website'] || lead.domain || '';
   const company = lead.Company || lead.company || '';
   
-  // Step 1: Scrape ZoomInfo
-  showStatus(`Scraping ZoomInfo for ${company || domain}...`, 'info');
-  const zoomData = await scrapeZoomInfo(domain);
-  await sleep(2000);
-  
-  // Step 2: Scrape RocketReach
-  showStatus(`Scraping RocketReach for ${company || domain}...`, 'info');
-  const rocketData = await scrapeRocketReach(domain);
-  await sleep(2000);
+  let zoomData = { phone: '', headquarters: '', employees: '', revenue: '', zoomInfoUrl: '' };
+  let rocketData = { email: '' };
+  try {
+    // Step 1: Scrape ZoomInfo
+    showStatus(`Scraping ZoomInfo for ${company || domain}...`, 'info');
+    zoomData = await scrapeZoomInfo(domain);
+    if (zoomData && (zoomData.phone || zoomData.headquarters || zoomData.employees || zoomData.revenue)) {
+      lastGoodZoomData.set(domain, zoomData);
+    } else if (lastGoodZoomData.has(domain)) {
+      console.log('Using cached ZoomInfo data in popup for:', domain);
+      zoomData = lastGoodZoomData.get(domain);
+    }
+    await sleep(2000);
+    
+    // Step 2: Scrape RocketReach
+    showStatus(`Scraping RocketReach for ${company || domain}...`, 'info');
+    rocketData = await scrapeRocketReach(domain);
+    if (rocketData && rocketData.email) {
+      lastGoodRocketData.set(domain, rocketData);
+    } else if (lastGoodRocketData.has(domain)) {
+      console.log('Using cached RocketReach data in popup for:', domain);
+      rocketData = lastGoodRocketData.get(domain);
+    }
+    await sleep(2000);
+  } catch (error) {
+    console.error('Scrape error:', error);
+    logLeadResult(lead, 'ERROR', error.message || 'Scrape failed');
+    showStatus('Error scraping data. Check console for details.', 'error');
+    isProcessing = false;
+    stopAutomation();
+    return;
+  }
   
   // Get campaign name from input only if toggle is ON
   let campaignName = '';
@@ -226,6 +261,7 @@ async function processNextLead() {
       console.error('Fill error:', chrome.runtime.lastError || response);
       logLeadResult(lead, 'ERROR', (response && response.message) || (chrome.runtime.lastError && chrome.runtime.lastError.message) || 'Unknown error');
       showStatus('Error filling form. Check console for details.', 'error');
+      isProcessing = false;
       stopAutomation();
       return;
     }
@@ -233,6 +269,7 @@ async function processNextLead() {
     logLeadResult(lead, 'SUCCESS', '');
     
     currentIndex++;
+    isProcessing = false;
     if (currentIndex < leads.length) {
       setTimeout(() => processNextLead(), 3000); // Wait 3 seconds before next lead
     } else {

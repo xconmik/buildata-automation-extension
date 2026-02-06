@@ -7,10 +7,48 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Serialize background actions to avoid overlapping scrapes
+const actionQueues = {};
+function enqueueAction(key, fn) {
+  actionQueues[key] = (actionQueues[key] || Promise.resolve()).then(fn, fn);
+  return actionQueues[key];
+}
+
+// Prevent duplicate concurrent runs for the same key
+const inFlight = new Map();
+function runSingleFlight(key, fn) {
+  if (inFlight.has(key)) {
+    return inFlight.get(key);
+  }
+  const promise = Promise.resolve().then(fn).finally(() => inFlight.delete(key));
+  inFlight.set(key, promise);
+  return promise;
+}
+
+// Simple cache to reuse recent scrape results
+const scrapeCache = {
+  zoomInfo: new Map(),
+  rocketReach: new Map()
+};
+const CACHE_TTL_MS = 2 * 60 * 1000;
+function getCached(map, key) {
+  const entry = map.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > CACHE_TTL_MS) {
+    map.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+function setCached(map, key, data) {
+  map.set(key, { ts: Date.now(), data });
+}
+
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'scrapeZoomInfo') {
-    scrapeZoomInfoData(message.domain).then(data => {
+    const key = `scrapeZoomInfo:${message.domain || ''}`;
+    enqueueAction('scrapeZoomInfo', () => runSingleFlight(key, () => scrapeZoomInfoData(message.domain))).then(data => {
       sendResponse(data);
     }).catch(error => {
       sendResponse({ phone: '', headquarters: '', employees: '', revenue: '', zoomInfoUrl: '' });
@@ -19,7 +57,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.action === 'scrapeRocketReach') {
-    scrapeRocketReachData(message.domain, message.firstName, message.lastName).then(data => {
+    const key = `scrapeRocketReach:${message.domain || ''}:${message.firstName || ''}:${message.lastName || ''}`;
+    enqueueAction('scrapeRocketReach', () => runSingleFlight(key, () => scrapeRocketReachData(message.domain, message.firstName, message.lastName))).then(data => {
       sendResponse(data);
     }).catch(error => {
       sendResponse({ email: '' });
@@ -28,7 +67,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.action === 'searchZipCode') {
-    searchZipCodeGoogle(message.street, message.city, message.state).then(zipCode => {
+    enqueueAction('searchZipCode', () => searchZipCodeGoogle(message.street, message.city, message.state)).then(zipCode => {
       sendResponse({ zipCode });
     }).catch(error => {
       sendResponse({ zipCode: '' });
@@ -37,7 +76,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === 'searchZipFromEmployeeDirectory') {
-    searchZipFromEmployeeDirectory(message.domain).then(zipCode => {
+    enqueueAction('searchZipFromEmployeeDirectory', () => searchZipFromEmployeeDirectory(message.domain)).then(zipCode => {
       sendResponse({ zipCode });
     }).catch(error => {
       sendResponse({ zipCode: '' });
@@ -60,11 +99,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         await chrome.tabs.update(buildataTab.id, { active: true });
         await new Promise(resolve => setTimeout(resolve, 500));
         
-        // Inject content script if needed
-        await chrome.scripting.executeScript({
-          target: {tabId: buildataTab.id},
-          files: ['content.js']
-        });
+        // Inject content script only if not already loaded
+        let isContentReady = false;
+        try {
+          const ping = await chrome.tabs.sendMessage(buildataTab.id, { action: 'ping' });
+          isContentReady = !!(ping && ping.status === 'ready');
+        } catch (e) {
+          isContentReady = false;
+        }
+        if (!isContentReady) {
+          await chrome.scripting.executeScript({
+            target: {tabId: buildataTab.id},
+            files: ['content.js']
+          });
+        }
         
         // Send message to content script
         chrome.tabs.sendMessage(buildataTab.id, message, (response) => {
@@ -85,6 +133,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function scrapeZoomInfoData(domain) {
   if (!domain) return { phone: '', headquarters: '', employees: '', revenue: '', zoomInfoUrl: '' };
+
+  const cacheKey = domain.toLowerCase();
+  const cached = getCached(scrapeCache.zoomInfo, cacheKey);
+  if (cached) {
+    console.log('Using cached ZoomInfo data for:', domain);
+    return cached;
+  }
   
   const scrapedData = { phone: '', headquarters: '', employees: '', revenue: '', zoomInfoUrl: '' };
   
@@ -140,6 +195,13 @@ async function scrapeZoomInfoData(domain) {
     console.error('Error scraping ZoomInfo:', error);
   }
   
+  if (scrapedData && (scrapedData.phone || scrapedData.headquarters || scrapedData.employees || scrapedData.revenue)) {
+    setCached(scrapeCache.zoomInfo, cacheKey, scrapedData);
+  } else if (cached) {
+    console.log('ZoomInfo scrape empty; falling back to cached data.');
+    return cached;
+  }
+
   console.log('Returning ZoomInfo data:', scrapedData);
   return scrapedData;
 }
@@ -148,6 +210,12 @@ async function scrapeRocketReachData(domain, firstName, lastName) {
   if (!domain) return { email: '' };
   
   const scrapedData = { email: '' };
+  const cacheKey = `${domain.toLowerCase()}|${(firstName || '').toLowerCase()}|${(lastName || '').toLowerCase()}`;
+  const cached = getCached(scrapeCache.rocketReach, cacheKey);
+  if (cached) {
+    console.log('Using cached RocketReach data for:', cacheKey);
+    return cached;
+  }
   
   try {
     console.log('=== Starting RocketReach scrape for domain:', domain);
@@ -179,7 +247,22 @@ async function scrapeRocketReachData(domain, firstName, lastName) {
   } catch (error) {
     console.error('Error scraping RocketReach:', error);
   }
+
+  // Fallback: construct email if RocketReach returned nothing
+  if (!scrapedData.email && firstName && lastName) {
+    const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/+$/, '');
+    const constructedEmail = `${firstName.toLowerCase()}.${lastName.toLowerCase()}@${cleanDomain}`;
+    scrapedData.email = constructedEmail;
+    console.log('✓ Built email fallback:', constructedEmail);
+  }
   
+  if (scrapedData && scrapedData.email) {
+    setCached(scrapeCache.rocketReach, cacheKey, scrapedData);
+  } else if (cached) {
+    console.log('RocketReach scrape empty; falling back to cached data.');
+    return cached;
+  }
+
   return scrapedData;
 }
 

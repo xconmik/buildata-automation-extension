@@ -278,6 +278,22 @@ async function fillBuildataForm(data) {
   
   await typeSlowly('input#contactlink', data['Contact Link'] || data.contactLinkedIn || '');
   await sleep(500);
+
+  // Click generic Check button (for Contact Link) if present
+  if (data.autoButtonsEnabled !== false) {
+    const checkBtn = Array.from(document.querySelectorAll('button.btn.btn-info.btn-md'))
+      .find(btn => btn.textContent.trim() === 'Check');
+    if (checkBtn) {
+      console.log('✓ Clicking Check button...');
+      checkBtn.click();
+      await sleep(2000);
+      await handleModalIfAppears('OK');
+    } else {
+      console.warn('⚠️ Check button not found');
+    }
+  } else {
+    console.log('⏭️ Auto button clicks OFF - skipping Check button');
+  }
   
   // Click Check Duplicates button - dynamically find it
   if (data.autoButtonsEnabled !== false) {
@@ -297,16 +313,177 @@ async function fillBuildataForm(data) {
   // === COMPANY PROFILE ===
   await typeSlowly('input#company', data.Company || data.company || '');
   await typeSlowly('input#companylinkedinurl', linkedinUrl);
+
+  const selectByLabelText = async (labelText, value) => {
+    if (!value) return false;
+    const label = Array.from(document.querySelectorAll('label')).find(l =>
+      l.textContent.trim().toLowerCase() === labelText.toLowerCase()
+    );
+    if (!label) return false;
+
+    let selectEl = null;
+    const container = label.closest('.form-group') || label.closest('.form-row') || label.parentElement;
+    if (container) {
+      const candidates = Array.from(container.querySelectorAll('select.form-control, select.form-select'));
+      selectEl = candidates.find(sel => label.compareDocumentPosition(sel) & Node.DOCUMENT_POSITION_FOLLOWING) || candidates[0] || null;
+    }
+    if (!selectEl) return false;
+
+    const options = Array.from(selectEl.options || []);
+    const match = options.find(opt => opt.value === value || opt.text.trim() === value);
+    if (match) {
+      selectEl.value = match.value;
+      selectEl.dispatchEvent(new Event('input', { bubbles: true }));
+      selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+      await sleep(100);
+      console.log(`✓ ${labelText} selected: "${match.text}" (value: ${match.value})`);
+      return true;
+    }
+    return false;
+  };
+
+  const findSelectByOptionSignature = (requiredOptions) => {
+    const selects = Array.from(document.querySelectorAll('select.form-control, select.form-select'));
+    return selects.find(sel => {
+      const optionTexts = Array.from(sel.options || []).map(o => o.text.trim().toLowerCase());
+      return requiredOptions.every(req => optionTexts.some(text => text.includes(req)));
+    }) || null;
+  };
   
   // Employee Range dropdown (values 1-8) - use converted value
   const empValue = employeeDropdownValue || data['Employee Range'] || data.employeeRange || '';
   console.log('Setting Employee Range:', empValue);
-  await setDropdown('div.form-group:has(label[for="employeerange"]) select.form-control, div.form-group:has(label[for="employeerange"]) select.form-select', empValue);
+  let empSet = false;
+  let empSelect = findSelectByOptionSignature(['1 - 50', '2001 - 5000']);
+  if (empSelect && empValue) {
+    const options = Array.from(empSelect.options || []);
+    const match = options.find(opt => opt.value === empValue || opt.text.trim() === empValue);
+    if (match) {
+      empSelect.value = match.value;
+      empSelect.dispatchEvent(new Event('input', { bubbles: true }));
+      empSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      await sleep(100);
+      console.log(`✓ Employee Range selected: "${match.text}" (value: ${match.value})`);
+      empSet = true;
+    }
+  }
+  if (!empSet) {
+    empSet = await selectByLabelText('Employee Range', empValue);
+  }
+  if (!empSet) {
+    await setDropdown('div.form-group:has(label[for="employeerange"]) select.form-control, div.form-group:has(label[for="employeerange"]) select.form-select', empValue);
+  }
   
   // Revenue Range dropdown (values 1-7) - use converted value
   const revValue = revenueDropdownValue || data['Revenue Range'] || data.revenueRange || '';
   console.log('Setting Revenue Range:', revValue);
-  await setDropdown('div.form-group:has(label[for="revenuerange"]) select.form-control, div.form-group:has(label[for="revenuerange"]) select.form-select', revValue);
+  let revSet = false;
+  let revenueSelect = findSelectByOptionSignature(['upto 10 million', '1 billion and above']);
+  if (revenueSelect && revValue) {
+    const options = Array.from(revenueSelect.options || []);
+    const match = options.find(opt => opt.value === revValue || opt.text.trim() === revValue);
+    if (match) {
+      revenueSelect.value = match.value;
+      revenueSelect.dispatchEvent(new Event('input', { bubbles: true }));
+      revenueSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      await sleep(100);
+      console.log(`✓ Revenue Range selected: "${match.text}" (value: ${match.value})`);
+      revSet = true;
+    }
+  }
+  if (!revSet) {
+    revSet = await selectByLabelText('Revenue Range', revValue);
+  }
+  if (!revSet) {
+    let revenueSelect = document.querySelector('div.form-group:has(label[for="revenuerange"]) select.form-control, div.form-group:has(label[for="revenuerange"]) select.form-select');
+  if (!revenueSelect) {
+    const revenueGroup = Array.from(document.querySelectorAll('div.form-group')).find(group => {
+      const label = group.querySelector('label');
+      return label && label.textContent.trim().toLowerCase().includes('revenue range');
+    });
+    revenueSelect = revenueGroup?.querySelector('select.form-control, select.form-select') || null;
+  }
+  if (!revenueSelect) {
+    const revenueLabel = Array.from(document.querySelectorAll('label')).find(label =>
+      label.textContent.trim().toLowerCase().includes('revenue range')
+    );
+    if (revenueLabel) {
+      const container = revenueLabel.closest('div.form-group') ||
+        revenueLabel.closest('.form-row') ||
+        revenueLabel.closest('.row') ||
+        revenueLabel.parentElement;
+      if (container) {
+        const candidates = Array.from(container.querySelectorAll('select.form-control, select.form-select'));
+        revenueSelect = candidates.find(sel =>
+          revenueLabel.compareDocumentPosition(sel) & Node.DOCUMENT_POSITION_FOLLOWING
+        ) || candidates[0] || null;
+      }
+      if (!revenueSelect) {
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, {
+          acceptNode(node) {
+            if (node.tagName === 'SELECT' && (node.classList.contains('form-control') || node.classList.contains('form-select'))) {
+              return NodeFilter.FILTER_ACCEPT;
+            }
+            return NodeFilter.FILTER_SKIP;
+          }
+        });
+        let foundLabel = false;
+        let node = walker.currentNode;
+        while (node) {
+          if (!foundLabel && node === revenueLabel) {
+            foundLabel = true;
+          } else if (foundLabel && node.tagName === 'SELECT') {
+            revenueSelect = node;
+            break;
+          }
+          node = walker.nextNode();
+        }
+      }
+    }
+  }
+  if (revenueSelect) {
+    const labelText = revenueSelect.closest('div')?.querySelector('label')?.textContent?.toLowerCase() || '';
+    if (labelText.includes('employee range')) {
+      revenueSelect = null;
+    }
+  }
+  if (!revenueSelect) {
+    const revenueCandidates = Array.from(document.querySelectorAll('select.form-control, select.form-select'))
+      .filter(sel => {
+        const optionTexts = Array.from(sel.options || []).map(o => o.text.trim().toLowerCase());
+        return optionTexts.includes('upto 10 million') && optionTexts.includes('1 billion and above');
+      });
+    if (revenueCandidates.length > 0) {
+      revenueSelect = revenueCandidates[0];
+    }
+  }
+  if (revenueSelect) {
+    const optionTexts = Array.from(revenueSelect.options || []).map(o => o.text.trim().toLowerCase());
+    const hasMillion = optionTexts.some(text => text.includes('million') || text.includes('billion'));
+    if (!hasMillion) {
+      const millionSelect = Array.from(document.querySelectorAll('select.form-control, select.form-select'))
+        .find(sel => Array.from(sel.options || []).some(o => o.text.toLowerCase().includes('million') || o.text.toLowerCase().includes('billion')));
+      if (millionSelect) {
+        revenueSelect = millionSelect;
+      }
+    }
+  }
+    if (revenueSelect && revValue) {
+      const options = Array.from(revenueSelect.options || []);
+      const match = options.find(opt => opt.value === revValue || opt.text.trim() === revValue);
+      if (match) {
+        revenueSelect.value = match.value;
+        revenueSelect.dispatchEvent(new Event('input', { bubbles: true }));
+        revenueSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        await sleep(100);
+        console.log(`✓ Revenue Range selected: "${match.text}" (value: ${match.value})`);
+      } else {
+        await setDropdown('div.form-group:has(label[for="revenuerange"]) select.form-control, div.form-group:has(label[for="revenuerange"]) select.form-select', revValue);
+      }
+    } else {
+      await setDropdown('div.form-group:has(label[for="revenuerange"]) select.form-control, div.form-group:has(label[for="revenuerange"]) select.form-select', revValue);
+    }
+  }
   
   // SIC Code
   console.log('Setting SIC Code:', data['SIC Code'] || data.sicCode);
