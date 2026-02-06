@@ -179,6 +179,7 @@ function stopAutomation() {
 }
 
 async function processNextLead() {
+
   if (!isRunning || currentIndex >= leads.length) {
     if (currentIndex >= leads.length) {
       showStatus('All leads processed!', 'success');
@@ -192,19 +193,21 @@ async function processNextLead() {
     return;
   }
   isProcessing = true;
-  
+
   const lead = leads[currentIndex];
   updateProgress();
-  
+
   const domain = lead['Domain or Website'] || lead.domain || '';
   const company = lead.Company || lead.company || '';
-  
+
   let zoomData = { phone: '', headquarters: '', employees: '', revenue: '', zoomInfoUrl: '' };
   let rocketData = { email: '' };
   try {
     // Step 1: Scrape ZoomInfo
+    if (!isRunning) { isProcessing = false; return; }
     showStatus(`Scraping ZoomInfo for ${company || domain}...`, 'info');
     zoomData = await scrapeZoomInfo(domain);
+    if (!isRunning) { isProcessing = false; return; }
     if (zoomData && (zoomData.phone || zoomData.headquarters || zoomData.employees || zoomData.revenue)) {
       lastGoodZoomData.set(domain, zoomData);
     } else if (lastGoodZoomData.has(domain)) {
@@ -212,10 +215,12 @@ async function processNextLead() {
       zoomData = lastGoodZoomData.get(domain);
     }
     await sleep(2000);
-    
+    if (!isRunning) { isProcessing = false; return; }
+
     // Step 2: Scrape RocketReach
     showStatus(`Scraping RocketReach for ${company || domain}...`, 'info');
     rocketData = await scrapeRocketReach(domain);
+    if (!isRunning) { isProcessing = false; return; }
     if (rocketData && rocketData.email) {
       lastGoodRocketData.set(domain, rocketData);
     } else if (lastGoodRocketData.has(domain)) {
@@ -223,6 +228,7 @@ async function processNextLead() {
       rocketData = lastGoodRocketData.get(domain);
     }
     await sleep(2000);
+    if (!isRunning) { isProcessing = false; return; }
   } catch (error) {
     console.error('Scrape error:', error);
     logLeadResult(lead, 'ERROR', error.message || 'Scrape failed');
@@ -231,13 +237,13 @@ async function processNextLead() {
     stopAutomation();
     return;
   }
-  
+
   // Get campaign name from input only if toggle is ON
   let campaignName = '';
   if (campaignToggle.checked) {
     campaignName = campaignInput.value.trim();
   }
-  
+
   // Merge scraped data with CSV data
   const enrichedLead = {
     ...lead,
@@ -250,13 +256,15 @@ async function processNextLead() {
     scrapedZoomInfoUrl: zoomData.zoomInfoUrl,
     scrapedEmail: rocketData.email
   };
-  
+
   // Step 3: Fill Buildata form
+  if (!isRunning) { isProcessing = false; return; }
   showStatus(`Filling form for ${company || domain}...`, 'info');
   chrome.runtime.sendMessage({
     action: 'fillBuildataForm',
     data: enrichedLead
   }, (response) => {
+    if (!isRunning) { isProcessing = false; return; }
     if (chrome.runtime.lastError || !response || response.status === 'error') {
       console.error('Fill error:', chrome.runtime.lastError || response);
       logLeadResult(lead, 'ERROR', (response && response.message) || (chrome.runtime.lastError && chrome.runtime.lastError.message) || 'Unknown error');
@@ -267,11 +275,15 @@ async function processNextLead() {
     }
 
     logLeadResult(lead, 'SUCCESS', '');
-    
+
     currentIndex++;
     isProcessing = false;
-    if (currentIndex < leads.length) {
+    if (isRunning && currentIndex < leads.length) {
       setTimeout(() => processNextLead(), 3000); // Wait 3 seconds before next lead
+    } else if (!isRunning) {
+      showStatus('Automation stopped', 'info');
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
     } else {
       showStatus('All leads processed!', 'success');
       stopAutomation();
