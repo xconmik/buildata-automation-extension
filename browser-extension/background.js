@@ -35,6 +35,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+
+  if (message.action === 'searchZipFromEmployeeDirectory') {
+    searchZipFromEmployeeDirectory(message.domain).then(zipCode => {
+      sendResponse({ zipCode });
+    }).catch(error => {
+      sendResponse({ zipCode: '' });
+    });
+    return true;
+  }
   
   if (message.action === 'fillBuildataForm') {
     // Find the Buildata tab specifically, not just the active tab
@@ -226,6 +235,48 @@ async function scrapeDataForLead(domain) {
   }
   
   return scrapedData;
+}
+
+// Search ZoomInfo employee directory for zip code
+async function searchZipFromEmployeeDirectory(domain) {
+  if (!domain) return '';
+
+  try {
+    const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+    const searchQuery = `${cleanDomain} zoominfo employee directory`;
+    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
+
+    console.log('Searching ZoomInfo employee directory:', searchQuery);
+
+    const searchTab = await chrome.tabs.create({ url: searchUrl, active: false });
+    await sleep(4000);
+
+    let zipCode = '';
+
+    try {
+      const linkResult = await chrome.tabs.sendMessage(searchTab.id, { action: 'findZoomInfoEmployeeDirectoryLink' });
+      const targetUrl = linkResult?.zoomInfoEmployeeDirectoryUrl;
+
+      if (targetUrl) {
+        await chrome.tabs.update(searchTab.id, { url: targetUrl });
+        await sleep(6000);
+
+        const zipResult = await chrome.tabs.sendMessage(searchTab.id, { action: 'scrapeZoomInfoEmployeeDirectoryZip' });
+        zipCode = zipResult?.zipCode || '';
+        console.log('✓ Zip from employee directory:', zipCode);
+      } else {
+        console.log('✗ No ZoomInfo employee directory link found in search results');
+      }
+    } catch (e) {
+      console.log('✗ Error scraping ZoomInfo employee directory:', e.message);
+    }
+
+    await chrome.tabs.remove(searchTab.id);
+    return zipCode;
+  } catch (error) {
+    console.error('Error searching ZoomInfo employee directory zip:', error);
+    return '';
+  }
 }
 
 // Search Google for zip code dynamically

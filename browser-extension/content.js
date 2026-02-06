@@ -51,12 +51,18 @@ async function fillBuildataForm(data) {
   console.log('=== FILLING FORM WITH DATA ===');
   console.log('Campaign Name received:', data.campaignName);
   console.log('Full data:', data);
+  if (window.__buildataFillInProgress) {
+    console.warn('⚠️ Fill already in progress. Skipping duplicate call.');
+    return;
+  }
+  window.__buildataFillInProgress = true;
   window.__buildataAutoButtonsEnabled = data.autoButtonsEnabled !== false;
   
-  // Parse name
-  const firstLast = (data['First Name, Last Name'] || data.firstNameLastName || '').split(/,| /).map(s => s.trim()).filter(Boolean);
-  const firstName = firstLast[0] || '';
-  const lastName = firstLast.length > 1 ? firstLast[firstLast.length - 1] : '';
+  try {
+    // Parse name
+    const firstLast = (data['First Name, Last Name'] || data.firstNameLastName || '').split(/,| /).map(s => s.trim()).filter(Boolean);
+    const firstName = firstLast[0] || '';
+    const lastName = firstLast.length > 1 ? firstLast[firstLast.length - 1] : '';
   
   // LinkedIn URL formatting
   let linkedinUrl = data['Company Linkedin URL'] || data.companyLinkedIn || '';
@@ -452,7 +458,31 @@ async function fillBuildataForm(data) {
   if (zipInput) {
     let zipValue = scrapedZipCode || data.Zip || data.zipCode || data.zip || '';
     
-    // If no zip code found locally, search Google dynamically
+    // If no zip code found locally, try ZoomInfo employee directory search
+    if (!zipValue) {
+      const rawDomain = data['Domain or Website'] || data.domain || '';
+      if (rawDomain) {
+        console.log('No zip code found locally, searching ZoomInfo employee directory...');
+        try {
+          const result = await new Promise((resolve) => {
+            chrome.runtime.sendMessage({
+              action: 'searchZipFromEmployeeDirectory',
+              domain: rawDomain
+            }, (response) => {
+              resolve(response.zipCode || '');
+            });
+          });
+          if (result) {
+            zipValue = result;
+            console.log('✓ Found zip code from employee directory:', zipValue);
+          }
+        } catch (e) {
+          console.log('Employee directory zip search failed:', e);
+        }
+      }
+    }
+    
+    // If still no zip code, search Google dynamically
     if (!zipValue && scrapedStreetAddress && scrapedCity && scrapedState) {
       console.log('No zip code found locally, searching Google...');
       try {
@@ -493,8 +523,11 @@ async function fillBuildataForm(data) {
   // Comments
   await typeSlowly('textarea#comments', data.Comments || data.comments || '');
   
-  console.log('✓✓✓ FORM FILLING COMPLETED ✓✓✓');
-  console.log('All fields filled successfully!');
+    console.log('✓✓✓ FORM FILLING COMPLETED ✓✓✓');
+    console.log('All fields filled successfully!');
+  } finally {
+    window.__buildataFillInProgress = false;
+  }
 }
 
 function set(selector, value) {
@@ -546,9 +579,26 @@ async function selectCampaign(campaignName) {
     }
     
     console.log('Step 2: Clicking campaign button...');
-    campaignBtn.click();
+    const openCampaignDropdown = async () => {
+      campaignBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      campaignBtn.click();
+      campaignBtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+      await sleep(600);
+    };
+    await openCampaignDropdown();
     console.log('   ✓ Button clicked, waiting 2500ms...');
     await sleep(2500);
+    // Ensure dropdown actually opened
+    const isDropdownOpen = () => {
+      return campaignBtn.getAttribute('aria-expanded') === 'true' ||
+        document.querySelector('.dropdown-menu.show') ||
+        document.querySelector('.dropdown-menu[style*="display"]');
+    };
+    if (!isDropdownOpen()) {
+      console.log('   ⚠️ Dropdown not open yet, retrying click...');
+      await openCampaignDropdown();
+      await sleep(1500);
+    }
     
     console.log('Step 3: Looking for search input...');
     await sleep(500); // Give dropdown time to render
@@ -573,6 +623,14 @@ async function selectCampaign(campaignName) {
     
     if (!virtualizedContainer) {
       console.error('   ✗ Virtualized container never appeared');
+      // Retry opening dropdown once more in case it closed or failed to render
+      console.log('   🔁 Retrying dropdown open to render virtualized container...');
+      await openCampaignDropdown();
+      await sleep(1500);
+      virtualizedContainer = document.querySelector('div.virtualized');
+      if (virtualizedContainer) {
+        console.log('   ✓ Found virtualized container after retry');
+      }
     }
     
     // Debug: Show all inputs on page

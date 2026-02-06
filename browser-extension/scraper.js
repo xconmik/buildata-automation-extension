@@ -16,6 +16,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     findZoomInfoLink().then(data => sendResponse(data));
     return true;
   }
+
+  if (message.action === 'findZoomInfoEmployeeDirectoryLink') {
+    findZoomInfoEmployeeDirectoryLink().then(data => sendResponse(data));
+    return true;
+  }
+
+  if (message.action === 'scrapeZoomInfoEmployeeDirectoryZip') {
+    scrapeZoomInfoEmployeeDirectoryZip().then(data => sendResponse(data));
+    return true;
+  }
 });
 
 async function findZoomInfoLink() {
@@ -52,6 +62,66 @@ async function findZoomInfoLink() {
   } catch (error) {
     console.error('Error finding ZoomInfo link:', error);
     return { zoomInfoUrl: null };
+  }
+}
+
+async function findZoomInfoEmployeeDirectoryLink() {
+  try {
+    console.log('Searching for ZoomInfo employee directory link on:', window.location.href);
+
+    const zoomInfoLinks = Array.from(document.querySelectorAll('a[href*="zoominfo.com"]'));
+    console.log(`Found ${zoomInfoLinks.length} ZoomInfo links`);
+
+    // Prefer employee directory links
+    const employeeLinks = zoomInfoLinks.filter(link => {
+      const href = link.href.toLowerCase();
+      return href.includes('employee') || href.includes('directory');
+    });
+
+    if (employeeLinks.length > 0) {
+      const firstLink = employeeLinks[0].href;
+      console.log('✓ Found ZoomInfo employee directory link:', firstLink);
+      return { zoomInfoEmployeeDirectoryUrl: firstLink };
+    }
+
+    // Fallback: any ZoomInfo link
+    if (zoomInfoLinks.length > 0) {
+      const firstLink = zoomInfoLinks[0].href;
+      console.log('✓ Using first ZoomInfo link as fallback:', firstLink);
+      return { zoomInfoEmployeeDirectoryUrl: firstLink };
+    }
+
+    console.log('✗ No ZoomInfo employee directory links found');
+    return { zoomInfoEmployeeDirectoryUrl: null };
+  } catch (error) {
+    console.error('Error finding ZoomInfo employee directory link:', error);
+    return { zoomInfoEmployeeDirectoryUrl: null };
+  }
+}
+
+async function scrapeZoomInfoEmployeeDirectoryZip() {
+  try {
+    console.log('Scraping ZoomInfo employee directory zip from:', window.location.href);
+
+    const subtitle = document.querySelector('p.subTitle');
+    if (subtitle) {
+      const text = subtitle.textContent || '';
+      console.log('Found subtitle text:', text);
+
+      // Extract last 4-6 digit postal code from the sentence
+      const matches = text.match(/\b\d{4,6}\b/g);
+      const zipCode = matches && matches.length > 0 ? matches[matches.length - 1] : '';
+      if (zipCode) {
+        console.log('✓ Extracted zip code:', zipCode);
+        return { zipCode };
+      }
+    }
+
+    console.log('✗ Zip code not found in subtitle');
+    return { zipCode: '' };
+  } catch (error) {
+    console.error('Error scraping employee directory zip:', error);
+    return { zipCode: '' };
   }
 }
 
