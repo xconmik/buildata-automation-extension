@@ -1,3 +1,41 @@
+// === Auto-copy verification link to Comments ===
+function copyVerificationLinkToComments() {
+  // Select all verification link inputs (by label or placeholder or name)
+  const selectors = [
+    'input[name*="Verification Link"]',
+    'input[placeholder*="Verification Link"]',
+    'input'
+  ];
+  let linkValue = '';
+  // Find the first input with a ZoomInfo link
+  for (const selector of selectors) {
+    const inputs = Array.from(document.querySelectorAll(selector));
+    for (const input of inputs) {
+      if (input.value && input.value.startsWith('http')) {
+        linkValue = input.value;
+        break;
+      }
+    }
+    if (linkValue) break;
+  }
+  // Set the Comments textarea value
+  if (linkValue) {
+    const comments = document.querySelector('textarea');
+    if (comments) {
+      comments.value = linkValue;
+    }
+  }
+}
+
+// Run on page load and when any verification link input changes
+window.addEventListener('DOMContentLoaded', () => {
+  copyVerificationLinkToComments();
+  // Attach event listeners to all relevant inputs
+  const inputs = document.querySelectorAll('input');
+  inputs.forEach(input => {
+    input.addEventListener('input', copyVerificationLinkToComments);
+  });
+});
 // Content script for Buildata automation
 console.log('Buildata Automation Extension content script loaded.');
 
@@ -698,7 +736,22 @@ async function fillBuildataForm(data) {
   await setDropdown('select[id="country"], div.form-group:has(label[for="country"]) select.form-control', data.Country || data.country || '');
   
   // Comments
+
   await typeSlowly('textarea#comments', data.Comments || data.comments || '');
+
+  // === After form fill: copy employeesizeverificationlink to Comments ===
+  try {
+    const empLinkInput = document.querySelector('input[name*="employeesizeverificationlink" i], input[id*="employeesizeverificationlink" i]');
+    if (empLinkInput && empLinkInput.value && empLinkInput.value.startsWith('http')) {
+      const comments = document.querySelector('textarea#comments, textarea[name="comments"]');
+      if (comments) {
+        comments.value = empLinkInput.value;
+        comments.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+  } catch (e) {
+    console.warn('Could not auto-fill Comments with employeesizeverificationlink:', e);
+  }
   
     console.log('✓✓✓ FORM FILLING COMPLETED ✓✓✓');
     console.log('All fields filled successfully!');
