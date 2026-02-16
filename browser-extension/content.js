@@ -46,8 +46,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.action === 'fillBuildataForm') {
-    fillBuildataForm(message.data).then(() => {
-      sendResponse({status: 'done'});
+    fillBuildataForm(message.data).then((result) => {
+      sendResponse({status: 'done', ...(result || {})});
     }).catch((error) => {
       console.error('Fill error:', error);
       sendResponse({status: 'error', message: error.message});
@@ -73,6 +73,51 @@ function findInputByLabel(labelText) {
   return null;
 }
 
+function isTwoLetterToken(token) {
+  return /^[A-Za-z]{2}$/.test(token || '');
+}
+
+function normalizeToken(token) {
+  return String(token || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+}
+
+function resolveCompanyName(baseCompany, referenceCompany) {
+  const base = String(baseCompany || '').trim();
+  const reference = String(referenceCompany || '').trim();
+
+  if (!base) return reference;
+  if (!reference) return base;
+
+  const baseTokens = base.split(/\s+/).filter(Boolean);
+  const refTokens = reference.split(/\s+/).filter(Boolean);
+
+  if (baseTokens.length === 1 && isTwoLetterToken(baseTokens[0])) {
+    return reference;
+  }
+
+  if (baseTokens.length === refTokens.length) {
+    let diffCount = 0;
+    let replaceableDiff = false;
+
+    for (let index = 0; index < baseTokens.length; index++) {
+      const left = normalizeToken(baseTokens[index]);
+      const right = normalizeToken(refTokens[index]);
+      if (left !== right) {
+        diffCount += 1;
+        if (isTwoLetterToken(baseTokens[index])) {
+          replaceableDiff = true;
+        }
+      }
+    }
+
+    if (diffCount === 1 && replaceableDiff) {
+      return reference;
+    }
+  }
+
+  return base;
+}
+
 // Helper: handle modal OK (or other) button if it appears
 async function handleModalIfAppears(buttonText = 'OK') {
   const modalOkBtn = Array.from(document.querySelectorAll('button')).find(btn =>
@@ -83,6 +128,81 @@ async function handleModalIfAppears(buttonText = 'OK') {
     modalOkBtn.click();
     await sleep(1000);
   }
+}
+
+function classifyCheckEmailResult(modalText) {
+  const text = String(modalText || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!text) return { outcome: 'unknown', message: '' };
+
+  if (text.includes('good to go, valid email')) {
+    return { outcome: 'valid', message: 'Good to go, valid email' };
+  }
+
+  if (text.includes('good to go, catch all email')) {
+    return { outcome: 'valid', message: 'Good to go, catch all email' };
+  }
+
+  if (text.includes('this campaign is proofpoint protected and catch-all email is restricted')) {
+    return { outcome: 'hard-invalid', message: 'Restricted + proofpoint protected catch-all' };
+  }
+
+  if (text.includes('millionverifier: email cannot be verified at this time')) {
+    return { outcome: 'retry', message: 'Email cannot be verified at this time' };
+  }
+
+  if (text.includes('invalid email : verifalia')) {
+    return { outcome: 'invalid', message: 'Invalid Email : Verifalia' };
+  }
+
+  if (text.includes('invalid email')) {
+    return { outcome: 'invalid', message: 'Invalid Email' };
+  }
+
+  if (text.includes('sorry, this email is restricted')) {
+    return { outcome: 'invalid', message: 'Sorry, this email is restricted.' };
+  }
+
+  return { outcome: 'unknown', message: modalText };
+}
+
+async function evaluateCheckEmailModal() {
+  const timeoutMs = 9000;
+  const started = Date.now();
+  let checkEmailModal = null;
+
+  while (Date.now() - started < timeoutMs) {
+    const modals = Array.from(document.querySelectorAll('.modal-content'));
+    checkEmailModal = modals.find(modal => {
+      const title = modal.querySelector('.modal-title')?.textContent || '';
+      return title.toLowerCase().includes('check email');
+    }) || null;
+
+    if (checkEmailModal) break;
+    await sleep(200);
+  }
+
+  if (!checkEmailModal) {
+    return { outcome: 'unknown', message: 'Check Email modal not found' };
+  }
+
+  const bodyText = Array.from(checkEmailModal.querySelectorAll('.modal-body p'))
+    .map(node => (node.textContent || '').trim())
+    .filter(Boolean)
+    .join(' ')
+    .trim() || (checkEmailModal.querySelector('.modal-body')?.textContent || '').trim();
+
+  const result = classifyCheckEmailResult(bodyText);
+
+  const okBtn = Array.from(checkEmailModal.querySelectorAll('button')).find(btn =>
+    (btn.textContent || '').trim().toUpperCase() === 'OK'
+  );
+  const closeBtn = checkEmailModal.querySelector('.btn-close');
+
+  if (okBtn) okBtn.click();
+  else if (closeBtn) closeBtn.click();
+
+  await sleep(350);
+  return result;
 }
 
 async function fillBuildataForm(data) {
@@ -120,6 +240,7 @@ async function fillBuildataForm(data) {
   const scrapedHeadquarters = data.scrapedHeadquarters || '';
   const scrapedEmployees = data.scrapedEmployees || '';
   const scrapedRevenue = data.scrapedRevenue || '';
+  const scrapedIndustry = data.scrapedIndustry || '';
   const scrapedEmail = data.scrapedEmail || '';
   
   console.log('Using scraped data:', { scrapedPhone, scrapedHeadquarters, scrapedEmployees, scrapedRevenue, scrapedEmail });
@@ -248,6 +369,237 @@ async function fillBuildataForm(data) {
     
     console.log('Converted revenue to dropdown:', scrapedRevenue, '→ value:', revenueDropdownValue, `(parsed: ${revMillions}M)`);
   }
+
+  // Convert ZoomInfo industry text/chips to Buildata Industry dropdown value (1-22)
+  function mapIndustryToBuildataValue(rawIndustry) {
+    if (!rawIndustry) return '';
+
+    const normalized = String(rawIndustry).trim();
+    if (/^\d+$/.test(normalized)) return normalized;
+
+    const text = normalized.toLowerCase();
+
+    if (/health|pharma|biotech|biotechnology|hospital|medical|life\s*science/.test(text)) return '9';
+    if (/manufactur/.test(text)) return '10';
+    if (/information technology|it services/.test(text)) return '22';
+    if (/software|internet|saas|web\s*services|cloud/.test(text)) return '16';
+    if (/telecom|communications/.test(text)) return '17';
+    if (/finance|financial|bank|insurance|fintech/.test(text)) return '6';
+    if (/energy|utilities|mining|oil|gas/.test(text)) return '5';
+    if (/education|school|university|college/.test(text)) return '4';
+    if (/government|public sector|municipal|federal|state agency/.test(text)) return '8';
+    if (/food|agri|agriculture|farming|beverage/.test(text)) return '7';
+    if (/media|entertainment|broadcast|publishing/.test(text)) return '11';
+    if (/non\s*-?profit|charit/.test(text)) return '13';
+    if (/real estate|construction|property/.test(text)) return '14';
+    if (/retail|e-?commerce/.test(text)) return '15';
+    if (/transport|logistics|shipping|storage|warehous/.test(text)) return '18';
+    if (/travel|tourism|recreation|leisure|hospitality/.test(text)) return '19';
+    if (/wholesale|distribution|distributor/.test(text)) return '20';
+    if (/administrative|back\s*office|facilit(y|ies)\s*services/.test(text)) return '21';
+    if (/business services|professional services|consulting/.test(text)) return '1';
+    if (/computer|electronics|semiconductor|hardware/.test(text)) return '2';
+    if (/consumer services|consumer goods/.test(text)) return '3';
+
+    return '';
+  }
+
+  // Convert Title text to Buildata Seniority dropdown value (1-5)
+  function mapTitleToSeniorityValue(rawTitle) {
+    const title = String(rawTitle || '').trim();
+    if (!title) return '';
+
+    const words = title.split(/\s+/).filter(Boolean);
+    const firstWord = (words[0] || '').toLowerCase();
+    const secondWord = (words[1] || '').toLowerCase();
+    const firstTwoWords = `${firstWord} ${secondWord}`.trim();
+    const lowerTitle = title.toLowerCase();
+
+    // First + second word mapping (primary)
+    if (firstWord === 'vice' && secondWord === 'president') return '4';
+    if (firstWord === 'c' && secondWord === 'level') return '5';
+    if (firstWord === 'individual' && secondWord === 'contributor') return '1';
+    if (firstWord === 'senior' && secondWord === 'manager') return '2';
+    if (firstWord === 'general' && secondWord === 'manager') return '2';
+
+    if (firstTwoWords === 'vice president') return '4';
+    if (firstTwoWords === 'c level') return '5';
+    if (firstTwoWords === 'individual contributor') return '1';
+
+    // First word mapping
+    if (firstWord.startsWith('manag')) return '2'; // manage / manager
+    if (firstWord === 'manager') return '2';
+    if (firstWord === 'director') return '3';
+    if (firstWord === 'chief' || /^c\w*o$/.test(firstWord)) return '5';
+    if (firstWord === 'vp') return '4';
+
+    if (/\bvice president\b|\bvp\b/.test(lowerTitle)) return '4';
+    if (/\bdirector\b/.test(lowerTitle)) return '3';
+    if (/\bmanager\b/.test(lowerTitle)) return '2';
+    if (/\bchief\b|\bc-level\b|\bceo\b|\bcfo\b|\bcto\b|\bcoo\b|\bcmo\b|\bcio\b/.test(lowerTitle)) return '5';
+
+    return '';
+  }
+
+  async function setDepartmentOperations() {
+    const setSelectByLabel = async (labelKeyword, desiredValue, desiredText) => {
+      const labels = Array.from(document.querySelectorAll('label'));
+      const targetLabel = labels.find(label =>
+        (label.textContent || '').trim().toLowerCase().includes(labelKeyword.toLowerCase())
+      );
+
+      let selectEl = null;
+
+      if (targetLabel?.htmlFor) {
+        const byFor = document.getElementById(targetLabel.htmlFor);
+        if (byFor && byFor.tagName === 'SELECT') {
+          selectEl = byFor;
+        }
+      }
+
+      if (!selectEl && targetLabel) {
+        const container = targetLabel.closest('.form-group') || targetLabel.closest('.form-row') || targetLabel.parentElement;
+        selectEl = container?.querySelector('select.form-control, select.form-select, select') || null;
+      }
+
+      if (!selectEl && targetLabel) {
+        let node = targetLabel;
+        for (let steps = 0; steps < 20 && node; steps++) {
+          node = node.nextElementSibling;
+          if (!node) break;
+          if (node.tagName === 'SELECT') {
+            selectEl = node;
+            break;
+          }
+          const nestedSelect = node.querySelector?.('select.form-control, select.form-select, select');
+          if (nestedSelect) {
+            selectEl = nestedSelect;
+            break;
+          }
+        }
+      }
+
+      if (!selectEl) return false;
+
+      const options = Array.from(selectEl.options || []);
+      const matched = options.find(option => option.value === String(desiredValue)) ||
+        options.find(option => (option.textContent || '').trim().toLowerCase() === String(desiredText || '').toLowerCase()) ||
+        options.find(option => (option.textContent || '').trim().toLowerCase().includes(String(desiredText || '').toLowerCase()));
+
+      if (!matched) return false;
+
+      selectEl.value = matched.value;
+      selectEl.dispatchEvent(new Event('input', { bubbles: true }));
+      selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+      await sleep(120);
+      return true;
+    };
+
+    const byLabel = await setSelectByLabel('department', '12', 'Operations');
+    if (byLabel) {
+      console.log('✓ Department set to Operations (label-targeted)');
+      return;
+    }
+
+    const labels = Array.from(document.querySelectorAll('label'));
+    const departmentLabel = labels.find(label =>
+      (label.textContent || '').trim().toLowerCase().includes('department')
+    );
+
+    let departmentSelect = null;
+    if (departmentLabel) {
+      const container = departmentLabel.closest('.form-group') || departmentLabel.parentElement;
+      departmentSelect = container?.querySelector('select.form-control, select.form-select') || null;
+    }
+
+    if (!departmentSelect) {
+      const candidates = Array.from(document.querySelectorAll('select.form-control, select.form-select'));
+      departmentSelect = candidates.find(selectEl => {
+        const optionTexts = Array.from(selectEl.options || []).map(option => (option.textContent || '').trim().toLowerCase());
+        return optionTexts.includes('operations') && optionTexts.includes('executive management');
+      }) || null;
+    }
+
+    if (!departmentSelect) {
+      console.warn('❌ Department dropdown not found');
+      return;
+    }
+
+    const options = Array.from(departmentSelect.options || []);
+    const operationsOption = options.find(option => option.value === '12') ||
+      options.find(option => (option.textContent || '').trim().toLowerCase() === 'operations');
+
+    if (!operationsOption) {
+      console.warn('❌ Department option "Operations" not found');
+      return;
+    }
+
+    departmentSelect.value = operationsOption.value;
+    departmentSelect.dispatchEvent(new Event('input', { bubbles: true }));
+    departmentSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    await sleep(120);
+    console.log(`✓ Department set to Operations (value: ${operationsOption.value})`);
+  }
+
+  async function setFunctionOperations() {
+    const labels = Array.from(document.querySelectorAll('label'));
+    const functionLabel = labels.find(label =>
+      (label.textContent || '').trim().toLowerCase() === 'function'
+    ) || labels.find(label =>
+      (label.textContent || '').trim().toLowerCase().includes('function')
+    );
+
+    let functionSelect = null;
+    if (functionLabel?.htmlFor) {
+      const byFor = document.getElementById(functionLabel.htmlFor);
+      if (byFor && byFor.tagName === 'SELECT') functionSelect = byFor;
+    }
+
+    if (!functionSelect && functionLabel) {
+      const container = functionLabel.closest('.form-group') || functionLabel.closest('.form-row') || functionLabel.parentElement;
+      functionSelect = container?.querySelector('select.form-control, select.form-select, select') || null;
+    }
+
+    if (!functionSelect && functionLabel) {
+      let node = functionLabel;
+      for (let steps = 0; steps < 20 && node; steps++) {
+        node = node.nextElementSibling;
+        if (!node) break;
+        if (node.tagName === 'SELECT') {
+          functionSelect = node;
+          break;
+        }
+        const nestedSelect = node.querySelector?.('select.form-control, select.form-select, select');
+        if (nestedSelect) {
+          functionSelect = nestedSelect;
+          break;
+        }
+      }
+    }
+
+    if (!functionSelect) {
+      console.warn('❌ Function dropdown not found');
+      return;
+    }
+
+    const options = Array.from(functionSelect.options || []);
+    const operationsOption = options.find(option =>
+      (option.textContent || '').trim().toLowerCase() === 'operations'
+    ) || options.find(option =>
+      (option.textContent || '').trim().toLowerCase().includes('operations')
+    );
+
+    if (!operationsOption) {
+      console.warn('❌ Function option "Operations" not found');
+      return;
+    }
+
+    functionSelect.value = operationsOption.value;
+    functionSelect.dispatchEvent(new Event('input', { bubbles: true }));
+    functionSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    await sleep(120);
+    console.log(`✓ Function set to Operations (value: ${operationsOption.value})`);
+  }
   
   // Handle Campaign dropdown - wait for completion before continuing
   let campaignSelected = false;
@@ -281,15 +633,25 @@ async function fillBuildataForm(data) {
   await sleep(500);
   
   // Click Check Email button - dynamically find it by text
+  let emailCheckOutcome = 'not-checked';
+  let emailCheckMessage = '';
   if (data.autoButtonsEnabled !== false) {
     const checkEmailBtn = findButtonByText('Check Email');
     if (checkEmailBtn) {
       console.log('✓ Clicking Check Email button...');
       checkEmailBtn.click();
-      await sleep(2000); // Wait for email validation
-      await handleModalIfAppears('OK');
+      const modalResult = await evaluateCheckEmailModal();
+      emailCheckOutcome = modalResult.outcome;
+      emailCheckMessage = modalResult.message;
+      console.log('Check Email outcome:', modalResult);
+
+      if (emailCheckOutcome === 'invalid' || emailCheckOutcome === 'retry' || emailCheckOutcome === 'hard-invalid') {
+        return { emailCheckOutcome, emailCheckMessage };
+      }
     } else {
       console.warn('⚠️ Check Email button not found');
+      emailCheckOutcome = 'unknown';
+      emailCheckMessage = 'Check Email button not found';
     }
   } else {
     console.log('⏭️ Auto button clicks OFF - skipping Check Email');
@@ -299,57 +661,20 @@ async function fillBuildataForm(data) {
   await typeSlowly('input#website', domain);
   await sleep(500);
   
-  // Click Check Suppression button - dynamically find it
-  if (data.autoButtonsEnabled !== false) {
-    const checkSuppressionBtn = findButtonByText('Check Suppression');
-    if (checkSuppressionBtn) {
-      console.log('✓ Clicking Check Suppression button...');
-      checkSuppressionBtn.click();
-      await sleep(2000); // Wait for suppression check
-      await handleModalIfAppears('OK');
-    } else {
-      console.warn('⚠️ Check Suppression button not found');
-    }
-  } else {
-    console.log('⏭️ Auto button clicks OFF - skipping Check Suppression');
-  }
+  console.log('⏭️ Skipping Check Suppression auto-click');
   
   await typeSlowly('input#contactlink', data['Contact Link'] || data.contactLinkedIn || '');
   await sleep(500);
 
-  // Click generic Check button (for Contact Link) if present
-  if (data.autoButtonsEnabled !== false) {
-    const checkBtn = Array.from(document.querySelectorAll('button.btn.btn-info.btn-md'))
-      .find(btn => btn.textContent.trim() === 'Check');
-    if (checkBtn) {
-      console.log('✓ Clicking Check button...');
-      checkBtn.click();
-      await sleep(2000);
-      await handleModalIfAppears('OK');
-    } else {
-      console.warn('⚠️ Check button not found');
-    }
-  } else {
-    console.log('⏭️ Auto button clicks OFF - skipping Check button');
-  }
+  console.log('⏭️ Skipping Check auto-click');
   
-  // Click Check Duplicates button - dynamically find it
-  if (data.autoButtonsEnabled !== false) {
-    const checkDuplicatesBtn = findButtonByText('Check Duplicates');
-    if (checkDuplicatesBtn) {
-      console.log('✓ Clicking Check Duplicates button...');
-      checkDuplicatesBtn.click();
-      await sleep(2000); // Wait for duplicate check
-      await handleModalIfAppears('OK');
-    } else {
-      console.warn('⚠️ Check Duplicates button not found');
-    }
-  } else {
-    console.log('⏭️ Auto button clicks OFF - skipping Check Duplicates');
-  }
+  console.log('⏭️ Skipping Check Duplicates auto-click');
   
   // === COMPANY PROFILE ===
-  await typeSlowly('input#company', data.Company || data.company || '');
+  const baseCompany = data.Company || data.company || data.Column_5_Text || '';
+  const referenceCompany = data['COMPANY NAME'] || data['Company Name'] || data.resolvedCompanyName || '';
+  const companyName = resolveCompanyName(baseCompany, referenceCompany);
+  await typeSlowly('input#company', companyName);
   await typeSlowly('input#companylinkedinurl', linkedinUrl);
 
   const selectByLabelText = async (labelText, value) => {
@@ -532,8 +857,13 @@ async function fillBuildataForm(data) {
   await typeSlowly('input#naicscode', data['NAICS Code'] || data.naicsCode || '');
   
   // Industry dropdown (values 1-22) - REQUIRED
-  console.log('Setting Industry:', data.Industry || data.industry);
-  await setDropdown('div.form-group:has(label[for="industry"]) select.form-control', data.Industry || data.industry || '');
+  const industrySource = scrapedIndustry || data.Industry || data.industry || '';
+  const mappedIndustryValue = mapIndustryToBuildataValue(industrySource);
+  console.log('Setting Industry:', { industrySource, mappedIndustryValue });
+  await setDropdown(
+    'div.form-group:has(label[for="industry"]) select.form-control, div.form-group:has(label[for="industry"]) select.form-select',
+    mappedIndustryValue || industrySource
+  );
   
   // Sub Industry dropdown
   console.log('Setting Sub Industry:', data['Sub Industry'] || data.subIndustry);
@@ -548,16 +878,69 @@ async function fillBuildataForm(data) {
   // === CONTACT PROFILE ===
   await typeSlowly('input#firstname', firstName);
   await typeSlowly('input#lastname', lastName);
-  await typeSlowly('input#title', data.Title || data.title || '');
+  const titleValue = data.Title || data.title || '';
+  await typeSlowly('input#title', titleValue);
   
   // Seniority dropdown (values 1-5)
-  await setDropdown('div.form-group:has(label[for="seniority"]) select.form-control', data.Seniority || data.seniority || '');
+  const derivedSeniority = mapTitleToSeniorityValue(titleValue);
+  const seniorityValue = derivedSeniority || '1';
+  console.log('Setting Seniority:', { titleValue, seniorityValue });
+
+  const senioritySelect = findSelectByOptionSignature([
+    'individual contributor',
+    'manager',
+    'director',
+    'vice president',
+    'c level'
+  ]);
+
+  if (senioritySelect && seniorityValue) {
+    const options = Array.from(senioritySelect.options || []);
+    const seniorityOption = options.find(option => option.value === seniorityValue) ||
+      options.find(option => (option.textContent || '').trim().toLowerCase() === String(seniorityValue).toLowerCase());
+
+    if (seniorityOption) {
+      senioritySelect.value = seniorityOption.value;
+      senioritySelect.dispatchEvent(new Event('input', { bubbles: true }));
+      senioritySelect.dispatchEvent(new Event('change', { bubbles: true }));
+      await sleep(100);
+      console.log(`✓ Seniority set: "${seniorityOption.text}" (value: ${seniorityOption.value})`);
+    }
+  } else {
+    await setDropdown(
+      'div.form-group:has(label[for="seniority"]) select.form-control, div.form-group:has(label[for="seniority"]) select.form-select',
+      seniorityValue
+    );
+  }
   
   // Department dropdown (values 1-16)
-  await setDropdown('div.form-group:has(label[for="department"]) select.form-control', data.Department || data.department || '');
+  const departmentSelect = findSelectByOptionSignature([
+    'administration',
+    'engineering and r&d',
+    'operations',
+    'senior and general management'
+  ]);
+
+  if (departmentSelect) {
+    const options = Array.from(departmentSelect.options || []);
+    const operationsOption = options.find(option => option.value === '12') ||
+      options.find(option => (option.textContent || '').trim().toLowerCase() === 'operations');
+
+    if (operationsOption) {
+      departmentSelect.value = operationsOption.value;
+      departmentSelect.dispatchEvent(new Event('input', { bubbles: true }));
+      departmentSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      await sleep(100);
+      console.log(`✓ Department set to Operations (value: ${operationsOption.value})`);
+    } else {
+      await setDepartmentOperations();
+    }
+  } else {
+    await setDepartmentOperations();
+  }
   
   // Function dropdown
-  await setDropdown('div.form-group:has(label[for="function"]) select.form-control', data.Function || data.function || '');
+  await setFunctionOperations();
   
   // Specialty dropdown
   await setDropdown('div.form-group:has(label[for="specialty"]) select.form-control', data.Specialty || data.specialty || '');
@@ -661,17 +1044,36 @@ async function fillBuildataForm(data) {
   
   
   // Zip Code - with dynamic Google search backup
-  let zipInput = document.querySelector('input#zip');
+  let zipInput = document.querySelector('input#zip, input[id*="zip" i], input[name*="zip" i], input[placeholder*="zip" i], input[placeholder*="postal" i]');
   if (!zipInput) {
-    const inputs = Array.from(document.querySelectorAll('input[type="text"]'));
+    const inputs = Array.from(document.querySelectorAll('input'));
     const parent = inputs.find(i => {
       const label = i.closest('div.form-group')?.querySelector('label');
-      return label && (label.textContent.includes('Zip') || label.textContent.includes('zip'));
+      return label && /zip|postal/i.test(label.textContent || '');
     });
     if (parent) zipInput = parent;
   }
   if (zipInput) {
     let zipValue = scrapedZipCode || data.Zip || data.zipCode || data.zip || '';
+
+    const normalizeZipValue = (value) => {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+
+      const patterns = [
+        /\b\d{5}(?:-\d{4})?\b/,
+        /\b\d{4,6}\b/,
+        /\b[A-Z]\d[A-Z]\s?\d[A-Z]\d\b/i,
+        /\b[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}\b/i
+      ];
+
+      for (const pattern of patterns) {
+        const match = raw.match(pattern);
+        if (match) return match[0].trim();
+      }
+
+      return raw.replace(/\s+/g, ' ').trim();
+    };
     
     // If no zip code found locally, try ZoomInfo employee directory search
     if (!zipValue) {
@@ -698,15 +1100,18 @@ async function fillBuildataForm(data) {
     }
     
     // If still no zip code, search Google dynamically
-    if (!zipValue && scrapedStreetAddress && scrapedCity && scrapedState) {
+    if (!zipValue && (scrapedStreetAddress || scrapedCity || scrapedState)) {
       console.log('No zip code found locally, searching Google...');
       try {
+        const streetForSearch = scrapedStreetAddress || data['Street Address'] || data.streetAddress || '';
+        const cityForSearch = scrapedCity || data.City || data.city || '';
+        const stateForSearch = scrapedState || data.State || data.state || '';
         const result = await new Promise((resolve) => {
           chrome.runtime.sendMessage({
             action: 'searchZipCode',
-            street: scrapedStreetAddress,
-            city: scrapedCity,
-            state: scrapedState
+            street: streetForSearch,
+            city: cityForSearch,
+            state: stateForSearch
           }, (response) => {
             resolve(response.zipCode || '');
           });
@@ -720,6 +1125,8 @@ async function fillBuildataForm(data) {
       }
     }
     
+    zipValue = normalizeZipValue(zipValue);
+
     if (zipValue) {
       zipInput.value = zipValue;
       zipInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -755,6 +1162,7 @@ async function fillBuildataForm(data) {
   
     console.log('✓✓✓ FORM FILLING COMPLETED ✓✓✓');
     console.log('All fields filled successfully!');
+    return { emailCheckOutcome, emailCheckMessage };
   } finally {
     window.__buildataFillInProgress = false;
   }
@@ -1058,25 +1466,7 @@ async function selectCampaign(campaignName) {
     console.log('Step 7: Waiting for form to update after selection...');
     await sleep(2000);
     
-    console.log('Step 8: Looking for Load Specifications button...');
-    if (window.__buildataAutoButtonsEnabled !== false) {
-      const loadSpecBtn = findButtonByText('Load Specifications');
-      if (loadSpecBtn) {
-        console.log('   ✓ Found Load Specifications button');
-        console.log('Step 9: Clicking Load Specifications...');
-        loadSpecBtn.click();
-        console.log('   ✓ Clicked, waiting 4000ms for load...');
-        await sleep(4000);
-      } else {
-        console.warn('   ⚠️ Load Specifications button not found');
-        const allButtons = Array.from(document.querySelectorAll('button'));
-        allButtons.slice(0, 10).forEach((btn, idx) => {
-          console.log(`   Button ${idx}: "${btn.textContent.trim().substring(0, 40)}..."`);
-        });
-      }
-    } else {
-      console.log('⏭️ Auto button clicks OFF - skipping Load Specifications');
-    }
+    console.log('Step 8: Skipping Load Specifications auto-click');
     
   } catch (error) {
     console.error('❌❌❌ Campaign selection FAILED at step:', error.message);

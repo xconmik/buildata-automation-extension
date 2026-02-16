@@ -130,7 +130,8 @@ async function scrapeZoomInfo() {
     phone: '',
     headquarters: '',
     employees: '',
-    revenue: ''
+    revenue: '',
+    industry: ''
   };
   
   try {
@@ -203,6 +204,37 @@ async function scrapeZoomInfo() {
       }
     }
     if (!data.revenue) console.log('✗ Revenue not found');
+
+    // Extract INDUSTRY chips from company-chips-wrapper (e.g. Healthcare Services, Manufacturing, Pharmaceuticals)
+    console.log('Looking for industry...');
+    const industryLabel = Array.from(labels).find(label =>
+      (label.textContent || '').trim().toLowerCase() === 'industry'
+    );
+    if (industryLabel) {
+      const industryContainer = industryLabel.parentElement?.querySelector('#company-chips-wrapper') ||
+        document.querySelector('#company-chips-wrapper');
+
+      if (industryContainer) {
+        const chipLinks = Array.from(industryContainer.querySelectorAll('a.record-link, a.link'));
+        const industries = chipLinks
+          .map(link => (link.textContent || '').trim())
+          .filter(Boolean);
+
+        if (industries.length > 0) {
+          data.industry = industries.join(', ');
+          console.log('✓ Found industry:', data.industry);
+        }
+      }
+    }
+    if (!data.industry) {
+      const fallbackIndustryText = document.querySelector('#company-chips-wrapper')?.textContent?.trim() || '';
+      if (fallbackIndustryText) {
+        data.industry = fallbackIndustryText.replace(/\s+/g, ' ');
+        console.log('✓ Found industry (fallback):', data.industry);
+      } else {
+        console.log('✗ Industry not found');
+      }
+    }
     
     console.log('========================================');
     console.log('FINAL ZOOMINFO DATA:', data);

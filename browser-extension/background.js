@@ -51,7 +51,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     enqueueAction('scrapeZoomInfo', () => runSingleFlight(key, () => scrapeZoomInfoData(message.domain))).then(data => {
       sendResponse(data);
     }).catch(error => {
-      sendResponse({ phone: '', headquarters: '', employees: '', revenue: '', zoomInfoUrl: '' });
+      sendResponse({ phone: '', headquarters: '', employees: '', revenue: '', industry: '', zoomInfoUrl: '' });
     });
     return true;
   }
@@ -132,7 +132,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function scrapeZoomInfoData(domain) {
-  if (!domain) return { phone: '', headquarters: '', employees: '', revenue: '', zoomInfoUrl: '' };
+  if (!domain) return { phone: '', headquarters: '', employees: '', revenue: '', industry: '', zoomInfoUrl: '' };
 
   const cacheKey = domain.toLowerCase();
   const cached = getCached(scrapeCache.zoomInfo, cacheKey);
@@ -141,7 +141,7 @@ async function scrapeZoomInfoData(domain) {
     return cached;
   }
   
-  const scrapedData = { phone: '', headquarters: '', employees: '', revenue: '', zoomInfoUrl: '' };
+  const scrapedData = { phone: '', headquarters: '', employees: '', revenue: '', industry: '', zoomInfoUrl: '' };
   
   try {
     console.log('=== Starting ZoomInfo scrape for domain:', domain);
@@ -174,7 +174,7 @@ async function scrapeZoomInfoData(domain) {
         const data = await chrome.tabs.sendMessage(searchTab.id, { action: 'scrapeZoomInfo' });
         console.log('Received data from ZoomInfo:', data);
         
-        if (data && (data.phone || data.headquarters || data.employees || data.revenue)) {
+        if (data && (data.phone || data.headquarters || data.employees || data.revenue || data.industry)) {
           Object.assign(scrapedData, data);
           console.log('✓ ZoomInfo scraping complete:', scrapedData);
         } else {
@@ -195,7 +195,7 @@ async function scrapeZoomInfoData(domain) {
     console.error('Error scraping ZoomInfo:', error);
   }
   
-  if (scrapedData && (scrapedData.phone || scrapedData.headquarters || scrapedData.employees || scrapedData.revenue)) {
+  if (scrapedData && (scrapedData.phone || scrapedData.headquarters || scrapedData.employees || scrapedData.revenue || scrapedData.industry)) {
     setCached(scrapeCache.zoomInfo, cacheKey, scrapedData);
   } else if (cached) {
     console.log('ZoomInfo scrape empty; falling back to cached data.');
@@ -364,6 +364,7 @@ async function searchZipFromEmployeeDirectory(domain) {
 
 // Search Google for zip code dynamically
 async function searchZipCodeGoogle(street, city, state) {
+  let searchTab = null;
   try {
     const searchQuery = `${street} ${city} ${state} what is the zip code`;
     const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
@@ -371,7 +372,7 @@ async function searchZipCodeGoogle(street, city, state) {
     console.log('Searching for zip code:', searchQuery);
     
     // Create a new tab for searching
-    const searchTab = await new Promise((resolve, reject) => {
+    searchTab = await new Promise((resolve, reject) => {
       chrome.tabs.create({ url: googleSearchUrl, active: false }, (tab) => {
         if (tab) resolve(tab);
         else reject(new Error('Could not create search tab'));
@@ -381,61 +382,45 @@ async function searchZipCodeGoogle(street, city, state) {
     // Wait for page to load
     await sleep(3000);
     
-    let zipCode = '';
-    
-    try {
-      // Click first search result link
-      await chrome.tabs.executeScript({
-        tabId: searchTab.id,
-        code: `
-          const firstLink = document.querySelector('a[data-sokoban-class*="result"] h3')?.closest('a') ||
-                            document.querySelector('div[data-sokoban-class="result"] a') ||
-                            document.querySelector('a > h3')?.closest('a') ||
-                            document.querySelector('a[href*="postal"]') ||
-                            document.querySelector('.yuRUbf a');
-          if (firstLink) {
-            console.log('Clicking first result link');
-            firstLink.click();
+    const codeResult = await chrome.scripting.executeScript({
+      target: { tabId: searchTab.id },
+      func: () => {
+        const text = (document.body && document.body.innerText) ? document.body.innerText : '';
+        const patterns = [
+          /Postal Code[\s:]*([0-9]{4,6})/i,
+          /(?:ZIP|Zip Code)[\s:]*([0-9]{5}(?:-[0-9]{4})?)/i,
+          /\b([A-Z]\d[A-Z]\s?\d[A-Z]\d)\b/i,
+          /\b([A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2})\b/i,
+          /\b([0-9]{4,6})\b/
+        ];
+
+        for (const pattern of patterns) {
+          const match = text.match(pattern);
+          if (match && match[1]) {
+            return String(match[1]).trim();
           }
-        `
-      });
-      
-      // Wait for result page to load
-      await sleep(2500);
-      
-      // Extract postal code from the result page
-      const codeResult = await chrome.tabs.executeScript({
-        tabId: searchTab.id,
-        code: `
-          const pageText = document.body.innerText;
-          
-          // Look for "Postal Code 35305" format
-          let match = pageText.match(/Postal Code[\\s:]*([0-9]{4,6})/i);
-          if (match) {
-            match[1];
-          } else {
-            // Look for other postal code patterns
-            match = pageText.match(/(?:Postal Code|ZIP|Zip Code)[:\\s]*([0-9\\-A-Z]{3,10})/i);
-            match ? match[1].trim() : '';
-          }
-        `
-      });
-      
-      zipCode = codeResult?.[0] || '';
-      console.log('Found zip code from result page:', zipCode);
-      
-    } catch (e) {
-      console.log('Error clicking first link or extracting zip:', e);
-    }
-    
-    // Close search tab
-    chrome.tabs.remove(searchTab.id);
-    
+        }
+
+        return '';
+      }
+    });
+
+    const zipCode = codeResult?.[0]?.result || '';
+    console.log('Found zip code from Google result page:', zipCode);
+
     console.log('Final zip code extracted:', zipCode);
     return zipCode;
     
   } catch (error) {
     console.error('Error searching for zip code:', error);
     return '';
+  } finally {
+    if (searchTab && searchTab.id) {
+      try {
+        await chrome.tabs.remove(searchTab.id);
+      } catch {
+        // no-op if tab already closed
+      }
+    }
   }
 }
