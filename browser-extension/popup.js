@@ -3,6 +3,8 @@ let currentIndex = 0;
 let isRunning = false;
 let isProcessing = false;
 let logRows = [];
+const HISTORY_STORAGE_KEY = 'buildataHistoryRows';
+const HISTORY_MAX_ROWS = 50000;
 const lastGoodZoomData = new Map();
 const lastGoodRocketData = new Map();
 const invalidEmailStreakByCompany = new Map();
@@ -25,6 +27,8 @@ const campaignToggle = document.getElementById('campaignToggle');
 const toggleLabel = document.getElementById('toggleLabel');
 const autoButtonsToggle = document.getElementById('autoButtonsToggle');
 const autoButtonsLabel = document.getElementById('autoButtonsLabel');
+const reuseCompanyToggle = document.getElementById('reuseCompanyToggle');
+const reuseCompanyLabel = document.getElementById('reuseCompanyLabel');
 
 // Initialize auto buttons toggle label
 if (autoButtonsToggle.checked) {
@@ -33,6 +37,17 @@ if (autoButtonsToggle.checked) {
 } else {
   autoButtonsLabel.textContent = 'OFF';
   autoButtonsLabel.style.color = '#7f8c8d';
+}
+
+// Initialize reuse-company toggle label
+if (reuseCompanyToggle && reuseCompanyLabel) {
+  if (reuseCompanyToggle.checked) {
+    reuseCompanyLabel.textContent = 'ON';
+    reuseCompanyLabel.style.color = '#2ecc71';
+  } else {
+    reuseCompanyLabel.textContent = 'OFF';
+    reuseCompanyLabel.style.color = '#7f8c8d';
+  }
 }
 
 // Helper function for delays
@@ -65,6 +80,19 @@ autoButtonsToggle.addEventListener('change', () => {
   }
 });
 
+// Handle reuse-company toggle
+if (reuseCompanyToggle && reuseCompanyLabel) {
+  reuseCompanyToggle.addEventListener('change', () => {
+    if (reuseCompanyToggle.checked) {
+      reuseCompanyLabel.textContent = 'ON';
+      reuseCompanyLabel.style.color = '#2ecc71';
+    } else {
+      reuseCompanyLabel.textContent = 'OFF';
+      reuseCompanyLabel.style.color = '#7f8c8d';
+    }
+  });
+}
+
 csvFileInput.addEventListener('change', handleFileUpload);
 startBtn.addEventListener('click', startAutomation);
 stopBtn.addEventListener('click', stopAutomation);
@@ -81,6 +109,46 @@ chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
 });
 
 ensureDispotrackerLoaded();
+initializeHistory();
+
+function getStorageValue(key) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get([key], (result) => {
+      resolve(result && Object.prototype.hasOwnProperty.call(result, key) ? result[key] : null);
+    });
+  });
+}
+
+function setStorageValue(key, value) {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ [key]: value }, () => resolve());
+  });
+}
+
+async function initializeHistory() {
+  try {
+    const stored = await getStorageValue(HISTORY_STORAGE_KEY);
+    if (Array.isArray(stored)) {
+      logRows = stored;
+      downloadLogBtn.disabled = logRows.length === 0;
+      console.log(`✓ Loaded ${logRows.length} historical log row(s)`);
+    }
+  } catch (error) {
+    console.warn('⚠ Failed to load history from storage:', error);
+  }
+}
+
+async function persistHistory() {
+  try {
+    const trimmed = logRows.slice(-HISTORY_MAX_ROWS);
+    if (trimmed.length !== logRows.length) {
+      logRows = trimmed;
+    }
+    await setStorageValue(HISTORY_STORAGE_KEY, logRows);
+  } catch (error) {
+    console.warn('⚠ Failed to persist history:', error);
+  }
+}
 
 function handleFileUpload(e) {
   const file = e.target.files[0];
@@ -92,12 +160,12 @@ function handleFileUpload(e) {
   reader.onload = (event) => {
     const csv = event.target.result;
     leads = parseCSV(csv);
-    logRows = [];
     downloadLogBtn.disabled = true;
     showStatus(`Loaded ${leads.length} leads`, 'success');
     startBtn.disabled = false;
     currentIndex = 0;
     updateProgress();
+    downloadLogBtn.disabled = logRows.length === 0;
   };
   reader.readAsText(file);
 }
@@ -117,6 +185,8 @@ function parseCSV(csv) {
     headers.forEach((header, index) => {
       row[header] = (values[index] || '').trim();
     });
+    // Preserve raw Column E value for company-keyword lookup fallback.
+    row.__columnE = (values[4] || '').trim();
     data.push(row);
   }
   
@@ -149,14 +219,6 @@ function parseCSVLine(line) {
   
   result.push(current.trim());
   return result;
-}
-
-function isTwoLetterToken(token) {
-  return /^[A-Za-z]{2}$/.test(token || '');
-}
-
-function normalizeToken(token) {
-  return String(token || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
 }
 
 function normalizeDomain(rawDomain) {
@@ -235,11 +297,6 @@ async function ensureDispotrackerLoaded() {
 }
 
 function findDispotrackerReference(baseCompany, domain) {
-  const normalizedDomain = normalizeDomain(domain);
-  if (normalizedDomain && dispotrackerByDomain.has(normalizedDomain)) {
-    return dispotrackerByDomain.get(normalizedDomain);
-  }
-
   const normalizedBase = normalizeCompanyKey(baseCompany);
   if (!normalizedBase) return '';
 
@@ -247,74 +304,56 @@ function findDispotrackerReference(baseCompany, domain) {
     return dispotrackerByCompany.get(normalizedBase);
   }
 
-  if (normalizedBase.length < 4) return '';
+  const legalSuffixes = new Set([
+    'ag', 'gmbh', 'co', 'kg', 'se', 'inc', 'corp', 'corporation', 'ltd', 'llc', 'plc', 'sa', 'nv', 'holding', 'holdings'
+  ]);
+  const keywordTokens = normalizedBase
+    .split(' ')
+    .filter(Boolean)
+    .filter(token => token.length > 1)
+    .filter(token => !legalSuffixes.has(token));
 
-  const baseTokens = normalizedBase.split(' ').filter(Boolean);
-  const meaningfulBaseTokens = baseTokens.filter(token => token.length > 2);
-  if (meaningfulBaseTokens.length === 0) return '';
+  if (keywordTokens.length === 0) return '';
 
   let bestMatch = '';
-  let bestScore = 0;
+  let bestScore = -Infinity;
 
   for (const entry of dispotrackerRows) {
     const candidateTokens = entry.normalizedCompany.split(' ').filter(Boolean);
-    let overlapCount = 0;
-    meaningfulBaseTokens.forEach(token => {
-      if (candidateTokens.includes(token)) overlapCount += 1;
+    const candidateTokenSet = new Set(candidateTokens);
+
+    let matchedCount = 0;
+    keywordTokens.forEach(token => {
+      if (candidateTokenSet.has(token)) matchedCount += 1;
     });
 
-    const overlapScore = overlapCount / meaningfulBaseTokens.length;
-    if (overlapScore > bestScore && overlapScore >= 0.8) {
-      bestScore = overlapScore;
+    const coverage = matchedCount / keywordTokens.length;
+    if (coverage <= 0) continue;
+
+    const extraTokenPenalty = Math.max(0, candidateTokens.length - matchedCount) * 0.02;
+    const startsWithBonus = entry.normalizedCompany.startsWith(keywordTokens[0]) ? 0.05 : 0;
+    const score = coverage + startsWithBonus - extraTokenPenalty;
+
+    if (score > bestScore) {
+      bestScore = score;
       bestMatch = entry.companyName;
     }
   }
 
-  return bestMatch;
-}
-
-function resolveCompanyName(baseCompany, referenceCompany) {
-  const base = String(baseCompany || '').trim();
-  const reference = String(referenceCompany || '').trim();
-
-  if (!base) return reference;
-  if (!reference) return base;
-
-  const baseTokens = base.split(/\s+/).filter(Boolean);
-  const refTokens = reference.split(/\s+/).filter(Boolean);
-
-  if (baseTokens.length === 1 && isTwoLetterToken(baseTokens[0])) {
-    return reference;
-  }
-
-  if (baseTokens.length === refTokens.length) {
-    let diffCount = 0;
-    let replaceableDiff = false;
-
-    for (let index = 0; index < baseTokens.length; index++) {
-      const left = normalizeToken(baseTokens[index]);
-      const right = normalizeToken(refTokens[index]);
-      if (left !== right) {
-        diffCount += 1;
-        if (isTwoLetterToken(baseTokens[index])) {
-          replaceableDiff = true;
-        }
-      }
-    }
-
-    if (diffCount === 1 && replaceableDiff) {
-      return reference;
-    }
-  }
-
-  return base;
+  return bestScore >= 0.6 ? bestMatch : '';
 }
 
 function getCompanyName(lead) {
-  const baseCompany = lead.Company || lead.company || lead.Column_5_Text || '';
-  const domain = lead['Domain or Website'] || lead.domain || '';
-  const referenceCompany = lead['COMPANY NAME'] || lead['Company Name'] || findDispotrackerReference(baseCompany, domain) || '';
-  return resolveCompanyName(baseCompany, referenceCompany);
+  const keyword = String(
+    lead.Company ||
+    lead.company ||
+    lead.__columnE ||
+    lead.Column_5_Text ||
+    ''
+  ).trim();
+
+  if (!keyword) return '';
+  return findDispotrackerReference(keyword, '');
 }
 
 function companyKey(name) {
@@ -381,6 +420,22 @@ async function processNextLead() {
 
   const domain = lead['Domain or Website'] || lead.domain || '';
   const company = getCompanyName(lead);
+  const companyKeyword = String(lead.Company || lead.company || lead.__columnE || '').trim();
+
+  if (!company) {
+    logLeadResult(lead, 'SKIPPED_NO_DISPOTRACKER_MATCH', `No COMPANY NAME match in dispotracker for keyword "${companyKeyword}"`);
+    currentIndex++;
+    isProcessing = false;
+    if (isRunning && currentIndex < leads.length) {
+      setTimeout(() => processNextLead(), 250);
+    } else {
+      showStatus('All leads processed!', 'success');
+      stopAutomation();
+    }
+    return;
+  }
+
+  lead.__resolvedCompanyName = company;
   const companyId = companyKey(company);
 
   if (blockedCompanies.has(companyId)) {
@@ -446,6 +501,7 @@ async function processNextLead() {
     resolvedCompanyName: company,
     campaignName: campaignName, // Will be empty string if toggle is OFF
     autoButtonsEnabled: autoButtonsToggle.checked,
+    reuseCompanyDetailsEnabled: reuseCompanyToggle ? reuseCompanyToggle.checked : true,
     scrapedPhone: zoomData.phone,
     scrapedHeadquarters: zoomData.headquarters,
     scrapedEmployees: zoomData.employees,
@@ -588,7 +644,7 @@ function showStatus(message, type) {
 
 function logLeadResult(lead, statusValue, message) {
   const domain = lead['Domain or Website'] || lead.domain || '';
-  const company = getCompanyName(lead);
+  const company = lead.__resolvedCompanyName || getCompanyName(lead) || lead.Company || lead.company || '';
   const name = lead['First Name, Last Name'] || lead.firstNameLastName || '';
   const timestamp = new Date().toISOString();
 
@@ -602,6 +658,7 @@ function logLeadResult(lead, statusValue, message) {
   });
 
   downloadLogBtn.disabled = logRows.length === 0;
+  persistHistory();
 }
 
 function downloadLogCsv() {

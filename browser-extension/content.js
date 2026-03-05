@@ -81,6 +81,10 @@ function normalizeToken(token) {
   return String(token || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
 }
 
+function normalizeCompanyKey(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
 function resolveCompanyName(baseCompany, referenceCompany) {
   const base = String(baseCompany || '').trim();
   const reference = String(referenceCompany || '').trim();
@@ -657,8 +661,23 @@ async function fillBuildataForm(data) {
     console.log('⏭️ Auto button clicks OFF - skipping Check Email');
   }
   
-  // Fill website/domain and click Check Suppression button
-  await typeSlowly('input#website', domain);
+  // Determine whether company profile can be reused from previous lead.
+  const baseCompany = data.Company || data.company || data.Column_5_Text || '';
+  const referenceCompany = data['COMPANY NAME'] || data['Company Name'] || data.resolvedCompanyName || '';
+  const companyName = resolveCompanyName(baseCompany, referenceCompany);
+  const currentCompanyKey = normalizeCompanyKey(companyName || domain);
+  const previousCompanyKey = normalizeCompanyKey(window.__buildataLastCompanyKey || '');
+  const existingCompanyField = document.querySelector('input#company');
+  const hasExistingCompanyData = !!String(existingCompanyField?.value || '').trim();
+  const reuseCompanyDetailsEnabled = data.reuseCompanyDetailsEnabled !== false;
+  const reuseCompanyDetails = reuseCompanyDetailsEnabled && !!currentCompanyKey && currentCompanyKey === previousCompanyKey && hasExistingCompanyData;
+
+  // Fill website/domain only when company details are not being reused.
+  if (!reuseCompanyDetails) {
+    await typeSlowly('input#website', domain);
+  } else {
+    console.log(`⏭️ Same consecutive company detected (${companyName || domain}); keeping existing company details.`);
+  }
   await sleep(500);
   
   console.log('⏭️ Skipping Check Suppression auto-click');
@@ -669,13 +688,6 @@ async function fillBuildataForm(data) {
   console.log('⏭️ Skipping Check auto-click');
   
   console.log('⏭️ Skipping Check Duplicates auto-click');
-  
-  // === COMPANY PROFILE ===
-  const baseCompany = data.Company || data.company || data.Column_5_Text || '';
-  const referenceCompany = data['COMPANY NAME'] || data['Company Name'] || data.resolvedCompanyName || '';
-  const companyName = resolveCompanyName(baseCompany, referenceCompany);
-  await typeSlowly('input#company', companyName);
-  await typeSlowly('input#companylinkedinurl', linkedinUrl);
 
   const selectByLabelText = async (labelText, value) => {
     if (!value) return false;
@@ -712,6 +724,11 @@ async function fillBuildataForm(data) {
       return requiredOptions.every(req => optionTexts.some(text => text.includes(req)));
     }) || null;
   };
+  
+  // === COMPANY PROFILE ===
+  if (!reuseCompanyDetails) {
+    await typeSlowly('input#company', companyName);
+    await typeSlowly('input#companylinkedinurl', linkedinUrl);
   
   // Employee Range dropdown (values 1-8) - use converted value
   const empValue = employeeDropdownValue || data['Employee Range'] || data.employeeRange || '';
@@ -869,11 +886,14 @@ async function fillBuildataForm(data) {
   console.log('Setting Sub Industry:', data['Sub Industry'] || data.subIndustry);
   await setDropdown('div.form-group:has(label[for="subindustry"]) select.form-control', data['Sub Industry'] || data.subIndustry || '');
   
-  // Verification links (fallback to ZoomInfo URL)
-  const zoomInfoUrl = data.scrapedZoomInfoUrl || data.zoomInfoUrl || data['ZoomInfo URL'] || '';
-  await typeSlowly('input#employeesizeverificationlink', data['Employee Size Verification Link'] || zoomInfoUrl);
-  await typeSlowly('input#industryverificationurl', data['Industry Verification Link'] || zoomInfoUrl);
-  await typeSlowly('input#revenueverificationurl', data['Naics/Sic/Revenue Verification Link'] || data['Revenue Verification Link'] || zoomInfoUrl);
+    // Verification links (fallback to ZoomInfo URL)
+    const zoomInfoUrl = data.scrapedZoomInfoUrl || data.zoomInfoUrl || data['ZoomInfo URL'] || '';
+    await typeSlowly('input#employeesizeverificationlink', data['Employee Size Verification Link'] || zoomInfoUrl);
+    await typeSlowly('input#industryverificationurl', data['Industry Verification Link'] || zoomInfoUrl);
+    await typeSlowly('input#revenueverificationurl', data['Naics/Sic/Revenue Verification Link'] || data['Revenue Verification Link'] || zoomInfoUrl);
+  } else {
+    console.log('⏭️ Company profile fields skipped (same consecutive company).');
+  }
   
   // === CONTACT PROFILE ===
   await typeSlowly('input#firstname', firstName);
@@ -1160,6 +1180,10 @@ async function fillBuildataForm(data) {
     console.warn('Could not auto-fill Comments with employeesizeverificationlink:', e);
   }
   
+    if (currentCompanyKey) {
+      window.__buildataLastCompanyKey = currentCompanyKey;
+    }
+
     console.log('✓✓✓ FORM FILLING COMPLETED ✓✓✓');
     console.log('All fields filled successfully!');
     return { emailCheckOutcome, emailCheckMessage };

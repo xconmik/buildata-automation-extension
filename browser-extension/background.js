@@ -142,6 +142,27 @@ async function scrapeZoomInfoData(domain) {
   }
   
   const scrapedData = { phone: '', headquarters: '', employees: '', revenue: '', industry: '', zoomInfoUrl: '' };
+
+  const isHeadquartersTruncated = (value) => {
+    const text = String(value || '').trim();
+    if (!text) return true;
+    return text.includes('...') || text.includes('…');
+  };
+
+  const buildEmployeeDirectoryUrl = (zoomInfoUrl) => {
+    if (!zoomInfoUrl) return '';
+    try {
+      const url = new URL(zoomInfoUrl);
+      if (url.pathname.startsWith('/pic/')) return url.toString();
+      if (url.pathname.startsWith('/c/')) {
+        url.pathname = url.pathname.replace('/c/', '/pic/');
+        return url.toString();
+      }
+      return '';
+    } catch {
+      return '';
+    }
+  };
   
   try {
     console.log('=== Starting ZoomInfo scrape for domain:', domain);
@@ -177,6 +198,30 @@ async function scrapeZoomInfoData(domain) {
         if (data && (data.phone || data.headquarters || data.employees || data.revenue || data.industry)) {
           Object.assign(scrapedData, data);
           console.log('✓ ZoomInfo scraping complete:', scrapedData);
+
+          // Fallback: if HQ is empty/truncated, use Employee Directory (/pic/...) for full address text.
+          if (isHeadquartersTruncated(scrapedData.headquarters)) {
+            const employeeDirectoryUrl = buildEmployeeDirectoryUrl(scrapedData.zoomInfoUrl);
+            if (employeeDirectoryUrl) {
+              console.log('HQ appears truncated; trying employee directory fallback:', employeeDirectoryUrl);
+              await chrome.tabs.update(searchTab.id, { url: employeeDirectoryUrl });
+              await sleep(5000);
+
+              const fallback = await chrome.tabs.sendMessage(searchTab.id, {
+                action: 'scrapeZoomInfoEmployeeDirectoryOverview'
+              });
+
+              if (fallback && fallback.headquarters) {
+                scrapedData.headquarters = fallback.headquarters;
+                console.log('✓ HQ replaced from employee directory:', scrapedData.headquarters);
+              }
+
+              if ((!scrapedData.employees || String(scrapedData.employees).trim() === '') && fallback && fallback.employees) {
+                scrapedData.employees = fallback.employees;
+                console.log('✓ Employees filled from employee directory:', scrapedData.employees);
+              }
+            }
+          }
         } else {
           console.log('⚠ ZoomInfo returned empty data');
         }

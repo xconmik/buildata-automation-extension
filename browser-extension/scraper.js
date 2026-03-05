@@ -26,6 +26,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     scrapeZoomInfoEmployeeDirectoryZip().then(data => sendResponse(data));
     return true;
   }
+
+  if (message.action === 'scrapeZoomInfoEmployeeDirectoryOverview') {
+    scrapeZoomInfoEmployeeDirectoryOverview().then(data => sendResponse(data));
+    return true;
+  }
 });
 
 async function findZoomInfoLink() {
@@ -122,6 +127,46 @@ async function scrapeZoomInfoEmployeeDirectoryZip() {
   } catch (error) {
     console.error('Error scraping employee directory zip:', error);
     return { zipCode: '' };
+  }
+}
+
+function parseEmployeeDirectoryOverviewText(text) {
+  const raw = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return { headquarters: '', employees: '' };
+
+  const hqMatch = raw.match(/corporate office is located in\s+(.+?)\s+and has\s+/i);
+  const employeesMatch = raw.match(/and has\s+(.+?)\s+employees\.?/i);
+
+  return {
+    headquarters: hqMatch ? hqMatch[1].trim() : '',
+    employees: employeesMatch ? employeesMatch[1].trim() : ''
+  };
+}
+
+async function scrapeZoomInfoEmployeeDirectoryOverview() {
+  try {
+    console.log('Scraping ZoomInfo employee directory overview from:', window.location.href);
+
+    const candidates = [
+      document.querySelector('p.subTitle')?.textContent || '',
+      document.querySelector('.overview .subTitle')?.textContent || '',
+      document.querySelector('h1 + p')?.textContent || '',
+      document.body?.innerText || ''
+    ];
+
+    for (const candidate of candidates) {
+      const parsed = parseEmployeeDirectoryOverviewText(candidate);
+      if (parsed.headquarters || parsed.employees) {
+        console.log('✓ Parsed employee directory overview:', parsed);
+        return parsed;
+      }
+    }
+
+    console.log('✗ Employee directory overview text not found or unparsable');
+    return { headquarters: '', employees: '' };
+  } catch (error) {
+    console.error('Error scraping employee directory overview:', error);
+    return { headquarters: '', employees: '' };
   }
 }
 
